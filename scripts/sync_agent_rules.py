@@ -252,38 +252,147 @@ class RuleEntry:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    F = argparse.RawDescriptionHelpFormatter
+
     parser = argparse.ArgumentParser(
-        prog="sync_agent_rules.py",
+        prog="sync-ai-rules",
+        formatter_class=F,
         description="Sync AI agent rules and skills across coding assistants.",
+        epilog=(
+            "supported agents:\n"
+            "  cursor        .mdc files with YAML frontmatter + skill symlinks\n"
+            "  codex         model-instructions.md + skill symlinks\n"
+            "  claude        CLAUDE.md\n"
+            "  gemini        GEMINI.md + skill symlinks\n"
+            "  kiro          steering/conventions.md\n"
+            "  antigravity   skill symlinks only\n"
+            "  agents-md     condensed numbered list\n"
+            "\n"
+            "examples:\n"
+            "  sync-ai-rules init                        first-time setup\n"
+            "  sync-ai-rules sync                        regenerate all configs\n"
+            "  sync-ai-rules --dry-run sync              preview without writing\n"
+            "  sync-ai-rules --only cursor sync          sync one agent\n"
+            "  sync-ai-rules add-rule my-rule            add and sync a new rule\n"
+            "  sync-ai-rules status                      show current state\n"
+            "\n"
+            "environment:\n"
+            "  NO_COLOR      disable colored output\n"
+            "\n"
+            "files:\n"
+            "  ~/.ai-agent/manifest.json    configuration and rule registry\n"
+            "  ~/.ai-agent/rules/           canonical rule files (markdown)\n"
+            "  ~/.ai-agent/skills/          canonical skill directories\n"
+            "  ~/.ai-agent/backups/         timestamped backups of overwritten files\n"
+        ),
     )
-    parser.add_argument("--dry-run", action="store_true", help="Preview changes without writing")
-    parser.add_argument("--diff", action="store_true", help="Show diffs against current files")
-    parser.add_argument("--verbose", action="store_true", help="Detailed output")
-    parser.add_argument("--only", metavar="AGENT", help="Sync a single agent")
-    parser.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="preview changes without writing any files")
+    parser.add_argument("--diff", action="store_true",
+                        help="show unified diffs against current files")
+    parser.add_argument("--verbose", action="store_true",
+                        help="enable detailed logging (backup events, file paths)")
+    parser.add_argument("--only", metavar="AGENT",
+                        help="restrict sync to a single agent target")
+    parser.add_argument("--yes", action="store_true",
+                        help="accept all defaults and skip confirmation prompts")
 
-    sub = parser.add_subparsers(dest="command")
-    sub.add_parser("init", help="First-time import and setup")
-    sub.add_parser("sync", help="Generate agent configs from canonical source")
-    sub.add_parser("reconfigure", help="Change target selection")
-    sub.add_parser("status", help="Show current configuration and sync state")
-    sub.add_parser("clean", help="Remove all generated files and skill symlinks")
+    sub = parser.add_subparsers(dest="command", title="commands",
+                                metavar="<command>")
 
-    add_p = sub.add_parser("add-rule", help="Add a new rule")
-    add_p.add_argument("id", help="Rule identifier (used as filename)")
-    add_p.add_argument("--description", default="", help="Cursor description")
-    add_p.add_argument("--always-apply", action="store_true", default=True)
-    add_p.add_argument("--no-always-apply", action="store_true")
-    add_p.add_argument("--file", type=str, help="Import content from file")
-    add_p.add_argument("--exclude", type=str, default="",
-                        help="Comma-separated agents to exclude")
+    sub.add_parser("init", formatter_class=F,
+                   help="import existing rules, select targets, first sync",
+                   description=(
+                       "Scan existing agent configs (Cursor, Codex, Claude, etc.),\n"
+                       "deduplicate rules, cherry-pick via interactive multi-select,\n"
+                       "and write canonical files to ~/.ai-agent/rules/.\n"
+                       "\n"
+                       "Source agent files are only read, never modified."
+                   ))
 
-    rm_p = sub.add_parser("remove-rule", help="Remove a rule")
-    rm_p.add_argument("id", help="Rule identifier to remove")
+    sub.add_parser("sync", formatter_class=F,
+                   help="regenerate all agent configs from canonical source",
+                   description=(
+                       "Read manifest.json and generate agent-native config files\n"
+                       "for each active target. Existing generated files are\n"
+                       "backed up before overwriting."
+                   ))
 
-    set_p = sub.add_parser("set", help="Update a manifest field")
-    set_p.add_argument("key", help="Dotted key path (e.g. agents_md.paths)")
-    set_p.add_argument("value", help="New value (arrays comma-separated)")
+    sub.add_parser("status", formatter_class=F,
+                   help="show current configuration and sync state",
+                   description=(
+                       "Display a read-only summary of rules, active targets,\n"
+                       "skills, AGENTS.md paths, and the last sync timestamp."
+                   ))
+
+    sub.add_parser("reconfigure", formatter_class=F,
+                   help="change which agents to sync to",
+                   description=(
+                       "Re-select which agents receive rule syncs and skill\n"
+                       "symlinks, then run a sync with the new targets."
+                   ))
+
+    sub.add_parser("clean", formatter_class=F,
+                   help="remove generated files and restore originals",
+                   description=(
+                       "Find all generated rule files and skill symlinks,\n"
+                       "remove them, and restore the originals from the most\n"
+                       "recent backup. Your canonical source in ~/.ai-agent/\n"
+                       "is not affected."
+                   ))
+
+    add_p = sub.add_parser("add-rule", formatter_class=F,
+                           help="create a rule file, add to manifest, and sync",
+                           description=(
+                               "Create a new rule in one step. Writes the rule file,\n"
+                               "adds a manifest entry, and runs sync to propagate\n"
+                               "to all active targets."
+                           ),
+                           epilog=(
+                               "examples:\n"
+                               "  sync-ai-rules add-rule my-rule --description 'My new rule'\n"
+                               "  sync-ai-rules add-rule my-rule --file ~/drafts/rule.md\n"
+                               "  sync-ai-rules add-rule my-rule --no-always-apply --exclude kiro,gemini\n"
+                           ))
+    add_p.add_argument("id", help="rule identifier (becomes the filename, e.g. my-rule -> rules/my-rule.md)")
+    add_p.add_argument("--description", default="",
+                        help="short description shown in Cursor's rule picker")
+    add_p.add_argument("--always-apply", action="store_true", default=True,
+                        help="mark as always-apply in Cursor (default: true)")
+    add_p.add_argument("--no-always-apply", action="store_true",
+                        help="mark as manually-applied in Cursor")
+    add_p.add_argument("--file", type=str, metavar="PATH",
+                        help="import rule content from an existing markdown file")
+    add_p.add_argument("--exclude", type=str, default="", metavar="AGENTS",
+                        help="comma-separated agent targets to skip (e.g. kiro,gemini)")
+
+    rm_p = sub.add_parser("remove-rule", formatter_class=F,
+                          help="remove a rule file, manifest entry, and sync",
+                          description=(
+                              "Delete a rule and its manifest entry. The rule file\n"
+                              "is backed up before removal. Runs sync to clean up\n"
+                              "generated files across all active targets."
+                          ))
+    rm_p.add_argument("id", help="rule identifier to remove (e.g. my-rule)")
+
+    set_p = sub.add_parser("set", formatter_class=F,
+                           help="update a manifest field from the command line",
+                           description=(
+                               "Set a manifest configuration value without\n"
+                               "editing JSON by hand."
+                           ),
+                           epilog=(
+                               "supported keys:\n"
+                               "  agents_md.paths      comma-separated output paths (supports globs)\n"
+                               "  agents_md.header     markdown header for generated AGENTS.md files\n"
+                               "  agents_md.preamble   text inserted after the header\n"
+                               "\n"
+                               "examples:\n"
+                               "  sync-ai-rules set agents_md.paths '~/Code/**/AGENTS.md'\n"
+                               "  sync-ai-rules set agents_md.header '# My Rules'\n"
+                           ))
+    set_p.add_argument("key", help="dotted key path (e.g. agents_md.paths)")
+    set_p.add_argument("value", help="new value (array fields are comma-separated)")
 
     return parser
 
