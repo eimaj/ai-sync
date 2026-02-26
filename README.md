@@ -141,6 +141,14 @@ All generated files include a header so the tool can detect and skip them during
 | `--only <agent>` | Sync a single agent |
 | `--yes` | Accept defaults, skip prompts |
 
+## Verify It Worked
+
+After running `init`, paste this prompt into any of your AI coding agents to confirm the sync is working:
+
+> List the rules you can see in your system prompt or context. For each one, tell me its name and a one-line summary. I want to verify my synced rules are loaded.
+
+You should see the same rules across every agent you synced to.
+
 ## Shell Alias
 
 ```bash
