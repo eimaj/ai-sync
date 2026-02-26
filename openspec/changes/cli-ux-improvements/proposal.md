@@ -48,3 +48,4 @@ Add new subcommands and UX improvements to `sync_agent_rules.py`:
 - Multi-select works with arrow keys on macOS/Linux, falls back gracefully
 - Wildcard paths like `~/Code/**/AGENTS.md` expand and write correctly
 - Output without `--verbose` fits on one screen for typical configs
+

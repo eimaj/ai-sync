@@ -156,14 +156,14 @@ The `init` command SHALL present interactive multi-select prompts for cherry-pic
 individual rules and skills after scanning sources, before writing canonical content.
 
 - After scanning and deduplication, the user is shown a multi-select of discovered rules
-  with id, source agent, and a content preview (first non-heading line, truncated)
+with id, source agent, and a content preview (first non-heading line, truncated)
 - All discovered rules are pre-selected by default
 - The user can deselect rules they do not want to import
 - A separate multi-select is shown for discovered skills with name and source path
 - All discovered skills are pre-selected by default
 - When `--yes` is active, all discovered rules and skills are accepted without prompting
 - The previous "Import summary" + "Proceed with import?" confirmation is replaced by
-  the multi-select prompts (selecting zero items is equivalent to aborting)
+the multi-select prompts (selecting zero items is equivalent to aborting)
 
 #### Scenario: Cherry-pick rules
 
@@ -205,3 +205,4 @@ Output SHALL be structured with clear sections and summary counts.
 - Per-file detail (individual writes, symlink operations) only shown under `--verbose`
 - `[dry-run]` shows a single summary line per agent, not per file
 - Summary line at end shows total targets synced
+
