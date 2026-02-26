@@ -16,6 +16,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+try:
+    import curses
+
+    _HAS_CURSES = True
+except ImportError:
+    _HAS_CURSES = False
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -180,21 +187,58 @@ def confirm(prompt: str, default: bool = True) -> bool:
     return answer in ("y", "yes")
 
 
-def multi_select(
+def _curses_multi_select(
+    stdscr: Any,
     prompt: str,
     options: list[tuple[str, str]],
-    defaults: Optional[list[str]] = None,
-    auto_accept: bool = False,
+    defaults: Optional[list[str]],
 ) -> list[str]:
-    """Numbered multi-select. Returns list of selected IDs.
-    If auto_accept is True, returns defaults without prompting."""
-    if auto_accept and defaults:
-        print(f"\n{prompt}")
-        for oid in defaults:
-            label = next((l for o, l in options if o == oid), oid)
-            print(f"  [auto] {label}")
-        return defaults
+    """Interactive multi-select using curses. Called via curses.wrapper."""
+    curses.curs_set(0)
+    curses.use_default_colors()
+    selected = set(defaults or [])
+    cursor = 0
+    hint = "(↑↓ navigate, Space toggle, a all, Enter confirm, q abort)"
 
+    while True:
+        stdscr.clear()
+        max_y, max_x = stdscr.getmaxyx()
+        stdscr.addnstr(0, 0, prompt, max_x - 1)
+        stdscr.addnstr(1, 0, hint, max_x - 1)
+
+        for i, (oid, label) in enumerate(options):
+            if i + 3 >= max_y:
+                break
+            marker = "x" if oid in selected else " "
+            prefix = ">" if i == cursor else " "
+            line = f"  {prefix} [{marker}] {label}"
+            stdscr.addnstr(i + 3, 0, line, max_x - 1)
+
+        stdscr.refresh()
+        key = stdscr.getch()
+
+        if key == curses.KEY_UP and cursor > 0:
+            cursor -= 1
+        elif key == curses.KEY_DOWN and cursor < len(options) - 1:
+            cursor += 1
+        elif key == ord(" "):
+            oid = options[cursor][0]
+            selected ^= {oid}
+        elif key == ord("a"):
+            all_ids = {o for o, _ in options}
+            selected = set() if selected == all_ids else all_ids
+        elif key in (curses.KEY_ENTER, 10, 13):
+            return [o for o, _ in options if o in selected]
+        elif key == ord("q") or key == 27:
+            return list(defaults or [])
+
+
+def _fallback_multi_select(
+    prompt: str,
+    options: list[tuple[str, str]],
+    defaults: Optional[list[str]],
+) -> list[str]:
+    """Comma-separated number input fallback for non-TTY environments."""
     print(f"\n{prompt}")
     for i, (oid, label) in enumerate(options, 1):
         marker = "*" if defaults and oid in defaults else " "
@@ -214,6 +258,31 @@ def multi_select(
             if 0 <= idx < len(options):
                 selected.append(options[idx][0])
     return selected
+
+
+def multi_select(
+    prompt: str,
+    options: list[tuple[str, str]],
+    defaults: Optional[list[str]] = None,
+    auto_accept: bool = False,
+) -> list[str]:
+    """Multi-select with fallback chain: auto_accept -> curses -> comma-separated."""
+    if auto_accept and defaults:
+        print(f"\n{prompt}")
+        for oid in defaults:
+            label = next((lbl for o, lbl in options if o == oid), oid)
+            print(f"  [auto] {label}")
+        return defaults
+
+    if _HAS_CURSES and sys.stdin.isatty() and sys.stdout.isatty():
+        try:
+            return curses.wrapper(
+                _curses_multi_select, prompt, options, defaults
+            )
+        except curses.error:
+            pass
+
+    return _fallback_multi_select(prompt, options, defaults)
 
 
 def is_generated_file(content: str) -> bool:
