@@ -36,6 +36,22 @@ sync_agent_rules.py init
 # Regenerate all agent configs from canonical source
 sync_agent_rules.py sync
 
+# Show current configuration and sync state
+sync_agent_rules.py status
+
+# Add a rule (creates file + manifest entry + syncs)
+sync_agent_rules.py add-rule my-rule --description "My new rule"
+
+# Add a rule from an existing file
+sync_agent_rules.py add-rule my-rule --file ~/drafts/rule.md
+
+# Remove a rule (deletes file + manifest entry + syncs)
+sync_agent_rules.py remove-rule my-rule
+
+# Update manifest fields from the CLI
+sync_agent_rules.py set agents_md.paths "~/Code/**/AGENTS.md"
+sync_agent_rules.py set agents_md.header "# My AGENTS Rules"
+
 # Change which agents to sync to
 sync_agent_rules.py reconfigure
 
@@ -49,24 +65,30 @@ sync_agent_rules.py sync --diff
 sync_agent_rules.py sync --only cursor
 ```
 
-## Adding a Rule
+## Managing Rules
 
-1. Create `~/.ai-agent/rules/my-rule.md` with plain markdown content
-2. Add an entry to `manifest.json`:
+Add a rule in one step:
 
-```json
-{
-  "id": "my-rule",
-  "file": "my-rule.md",
-  "imported_from": "manual",
-  "cursor": {
-    "alwaysApply": true,
-    "description": "Short description for Cursor"
-  }
-}
+```bash
+sync_agent_rules.py add-rule commit-strategy --description "Commit early and often"
 ```
 
-3. Run `sync_agent_rules.py sync`
+This creates `rules/commit-strategy.md`, adds it to `manifest.json`, and runs sync.
+
+Remove just as easily:
+
+```bash
+sync_agent_rules.py remove-rule commit-strategy
+```
+
+For advanced Cursor metadata, use flags:
+
+```bash
+sync_agent_rules.py add-rule my-rule \
+  --description "Short description" \
+  --no-always-apply \
+  --exclude "kiro,gemini"
+```
 
 ## Directory Structure
 
@@ -84,15 +106,27 @@ sync_agent_rules.py sync --only cursor
 
 The script is version-controlled. Your personal rules, skills, and config stay local.
 
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `init` | Import existing rules, select targets, first sync |
+| `sync` | Regenerate all agent configs from canonical source |
+| `status` | Show rules, targets, skills, and last sync time |
+| `add-rule` | Create rule file + manifest entry + sync |
+| `remove-rule` | Delete rule file + manifest entry + sync |
+| `set` | Update manifest fields (e.g. `agents_md.paths`) |
+| `reconfigure` | Change which agents to sync to |
+
 ## How It Works
 
-`init` imports rules from existing agent configs (Cursor `.mdc`, Codex `model-instructions.md`, etc.), deduplicates across sources, and writes canonical plain-markdown files to `rules/`. It also copies shared skills to `skills/` and creates `manifest.json` with metadata and target selection.
+`init` imports rules from existing agent configs (Cursor `.mdc`, Codex `model-instructions.md`, etc.), deduplicates across sources, and lets you cherry-pick which rules and skills to import via interactive multi-select. It writes canonical plain-markdown files to `rules/`, copies shared skills to `skills/`, and creates `manifest.json`.
 
 `sync` reads `manifest.json` and generates agent-native configs:
 - **Cursor**: wraps each rule in `.mdc` frontmatter, writes individual files
 - **Codex**: concatenates rules with section headers into one file
 - **Claude/Gemini/Kiro**: concatenates rules into a single markdown file
-- **AGENTS.md**: writes a condensed numbered summary
+- **AGENTS.md**: writes a condensed numbered summary (supports `~/Code/**/AGENTS.md` globs)
 - **Skills**: creates symlinks from agent dirs to `~/.ai-agent/skills/`
 
 All generated files include a header so the tool can detect and skip them during re-import.

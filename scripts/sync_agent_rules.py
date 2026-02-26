@@ -267,12 +267,15 @@ def multi_select(
     auto_accept: bool = False,
 ) -> list[str]:
     """Multi-select with fallback chain: auto_accept -> curses -> comma-separated."""
-    if auto_accept and defaults:
+    if not options:
+        return []
+
+    if auto_accept:
         print(f"\n{prompt}")
-        for oid in defaults:
+        for oid in (defaults or []):
             label = next((lbl for o, lbl in options if o == oid), oid)
             print(f"  [auto] {label}")
-        return defaults
+        return defaults or []
 
     if _HAS_CURSES and sys.stdin.isatty() and sys.stdout.isatty():
         try:
@@ -656,7 +659,7 @@ def gen_antigravity(manifest: dict, args: argparse.Namespace) -> None:
 
 
 def _expand_agents_md_paths(paths: list[str]) -> list[Path]:
-    """Expand glob patterns in AGENTS.md path list."""
+    """Expand glob patterns and normalize directory paths in AGENTS.md path list."""
     result: list[Path] = []
     for p in paths:
         expanded = os.path.expanduser(p)
@@ -665,9 +668,15 @@ def _expand_agents_md_paths(paths: list[str]) -> list[Path]:
             if not matches:
                 log(f"  Warning: glob '{p}' matched no files")
             for m in matches:
-                result.append(Path(m))
+                target = Path(m)
+                if target.is_dir():
+                    target = target / "AGENTS.md"
+                result.append(target)
         else:
-            result.append(Path(expanded))
+            target = Path(expanded)
+            if target.is_dir():
+                target = target / "AGENTS.md"
+            result.append(target)
     return result
 
 
@@ -1063,8 +1072,9 @@ def cmd_add_rule(args: argparse.Namespace) -> None:
     rule_file = f"{rule_id}.md"
     rule_path = RULES_DIR / rule_file
 
-    if rule_path.exists():
-        print(f"Error: rule '{rule_id}' already exists at {rule_path}")
+    existing_ids = {r["id"] for r in manifest.get("rules", [])}
+    if rule_id in existing_ids or rule_path.exists():
+        print(f"Error: rule '{rule_id}' already exists")
         sys.exit(1)
 
     if args.file:
