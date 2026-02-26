@@ -1,5 +1,7 @@
 # ai-agent
 
+> **Disclaimer:** This project was written with AI. It may contain bugs, incomplete logic, or assumptions that don't hold on your machine. Review before running -- it writes to agent config directories (`~/.cursor/`, `~/.codex/`, `~/.claude/`, etc.).
+
 Sync AI coding assistant rules and skills from a single canonical source to multiple agents.
 
 Edit rules once in `~/.ai-agent/rules/`, run `sync`, and every agent gets updated in its native format.
