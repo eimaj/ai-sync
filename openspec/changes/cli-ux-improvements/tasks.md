@@ -17,6 +17,16 @@ All changes in `scripts/sync_agent_rules.py` unless noted.
 - [ ] Display AGENTS.md paths
 - [ ] Display last synced timestamp
 
+## Phase 2b: Selective Import During Init
+
+- [ ] Add `_rule_preview()` helper -- first non-heading line, truncated to 80 chars
+- [ ] Add rule multi-select to `cmd_init()` after deduplication -- show id, source, preview
+- [ ] Add skill multi-select to `cmd_init()` after rule selection -- show name, source path
+- [ ] Filter `all_rules` and `all_skills` to only selected items before writing
+- [ ] Remove old "Import summary" + "Proceed with import?" confirmation (replaced by multi-select)
+- [ ] Abort if no rules selected (zero selection = abort)
+- [ ] Auto-accept all when `--yes` is active
+
 ## Phase 3: Add Rule Command
 
 - [ ] Implement `cmd_add_rule()` — guard duplicate, create file, update manifest, sync

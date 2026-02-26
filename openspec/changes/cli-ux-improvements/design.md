@@ -57,6 +57,67 @@ Read manifest. Print formatted sections:
 
 Implementation: format strings with fixed-width columns for rules table.
 
+## 2b. Selective Import in cmd_init
+
+After scanning sources and deduplicating, `cmd_init` presents two multi-select prompts
+to let the user cherry-pick which rules and skills to import.
+
+### Rule selection
+
+Build options from the deduplicated `all_rules` list. Each option shows the rule id,
+source agent, and a truncated content preview (first non-heading, non-empty line).
+
+```python
+def _rule_preview(rule: ImportedRule) -> str:
+    for line in rule.content.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            return stripped[:80]
+    return "(empty)"
+
+rule_options = [
+    (rule.id, f"{rule.id:30s} [{rule.source:6s}]  {_rule_preview(rule)}")
+    for rule in all_rules
+]
+all_rule_ids = [r.id for r in all_rules]
+
+selected_rule_ids = multi_select(
+    "Step 2b: Select rules to import:",
+    rule_options,
+    defaults=all_rule_ids,
+    auto_accept=args.yes,
+)
+if not selected_rule_ids:
+    print("  No rules selected. Aborted.")
+    return
+all_rules = [r for r in all_rules if r.id in selected_rule_ids]
+```
+
+### Skill selection
+
+Build options from the deduplicated `all_skills` list. Each option shows the skill
+directory name and its parent path.
+
+```python
+if all_skills:
+    skill_options = [
+        (s.name, f"{s.name:30s} [{s.parent}]")
+        for s in all_skills
+    ]
+    all_skill_names = [s.name for s in all_skills]
+
+    selected_skill_names = multi_select(
+        "Step 2c: Select skills to import:",
+        skill_options,
+        defaults=all_skill_names,
+        auto_accept=args.yes,
+    )
+    all_skills = [s for s in all_skills if s.name in selected_skill_names]
+```
+
+This replaces the old "Import summary" + "Proceed with import?" confirmation.
+The multi-select serves as both review and confirmation -- selecting zero items aborts.
+
 ## 3. cmd_add_rule
 
 ```python

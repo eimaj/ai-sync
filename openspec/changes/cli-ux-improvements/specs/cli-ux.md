@@ -150,6 +150,49 @@ The system SHALL provide an interactive terminal UI for multi-select prompts:
 - WHEN a multi-select prompt is triggered
 - THEN the existing comma-separated number input is used (or defaults auto-accepted)
 
+### Requirement: Selective Import During Init
+
+The `init` command SHALL present interactive multi-select prompts for cherry-picking
+individual rules and skills after scanning sources, before writing canonical content.
+
+- After scanning and deduplication, the user is shown a multi-select of discovered rules
+  with id, source agent, and a content preview (first non-heading line, truncated)
+- All discovered rules are pre-selected by default
+- The user can deselect rules they do not want to import
+- A separate multi-select is shown for discovered skills with name and source path
+- All discovered skills are pre-selected by default
+- When `--yes` is active, all discovered rules and skills are accepted without prompting
+- The previous "Import summary" + "Proceed with import?" confirmation is replaced by
+  the multi-select prompts (selecting zero items is equivalent to aborting)
+
+#### Scenario: Cherry-pick rules
+
+- GIVEN sources contain 5 discovered rules after deduplication
+- WHEN the user is prompted with the rule multi-select
+- THEN all 5 rules are pre-selected
+- AND the user can toggle individual rules off before confirming
+- AND only confirmed rules are written to `rules/` and `manifest.json`
+
+#### Scenario: Cherry-pick skills
+
+- GIVEN sources contain 12 discovered skills
+- WHEN the user is prompted with the skill multi-select
+- THEN all 12 skills are pre-selected
+- AND the user can toggle individual skills off before confirming
+- AND only confirmed skills are copied to `skills/`
+
+#### Scenario: Deselect all rules
+
+- GIVEN sources contain discovered rules
+- WHEN the user deselects all rules in the multi-select
+- THEN the script prints a message and aborts (no canonical content is written)
+
+#### Scenario: Auto-accept with --yes
+
+- GIVEN `--yes` is active
+- WHEN init reaches the rule/skill selection step
+- THEN all discovered rules and skills are accepted without prompting
+
 ## MODIFIED Requirements
 
 ### Requirement: Output Formatting

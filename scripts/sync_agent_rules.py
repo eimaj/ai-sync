@@ -437,6 +437,15 @@ def import_skills(skill_dirs: list[Path], args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _rule_preview(rule: ImportedRule) -> str:
+    """First non-heading, non-empty line of a rule, truncated."""
+    for line in rule.content.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            return stripped[:80]
+    return "(empty)"
+
+
 def deduplicate_rules(all_rules: list[ImportedRule], args: argparse.Namespace) -> list[ImportedRule]:
     seen: dict[str, ImportedRule] = {}
     result: list[ImportedRule] = []
@@ -712,14 +721,41 @@ def cmd_init(args: argparse.Namespace) -> None:
         print("\n  Deduplicating...")
         all_rules = deduplicate_rules(all_rules, args)
 
-    # Summary
-    print(f"\n  Import summary:")
-    print(f"    {len(all_rules)} rules")
-    print(f"    {len(all_skills)} skills")
+    # Step 2b: Select individual rules to import
+    rule_options = [
+        (rule.id, f"{rule.id:30s} [{rule.source:6s}]  {_rule_preview(rule)}")
+        for rule in all_rules
+    ]
+    all_rule_ids = [r.id for r in all_rules]
 
-    if not args.yes and not confirm("\n  Proceed with import?"):
-        print("  Aborted.")
+    selected_rule_ids = multi_select(
+        f"Step 2b: Select rules to import ({len(all_rules)} found):",
+        rule_options,
+        defaults=all_rule_ids,
+        auto_accept=args.yes,
+    )
+    if not selected_rule_ids:
+        print("  No rules selected. Aborted.")
         return
+    all_rules = [r for r in all_rules if r.id in selected_rule_ids]
+
+    # Step 2c: Select individual skills to import
+    if all_skills:
+        skill_options = [
+            (s.name, f"{s.name:30s} [{s.parent}]")
+            for s in all_skills
+        ]
+        all_skill_names = [s.name for s in all_skills]
+
+        selected_skill_names = multi_select(
+            f"Step 2c: Select skills to import ({len(all_skills)} found):",
+            skill_options,
+            defaults=all_skill_names,
+            auto_accept=args.yes,
+        )
+        all_skills = [s for s in all_skills if s.name in selected_skill_names]
+
+    print(f"\n  Selected: {len(all_rules)} rules, {len(all_skills)} skills")
 
     # Step 3: Select targets
     rule_target_options = [
