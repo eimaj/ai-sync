@@ -151,21 +151,40 @@ All generated files include a header so the tool can detect and skip them during
 | `--only <agent>` | Sync a single agent |
 | `--yes` | Accept defaults, skip prompts |
 
+## Nothing Is Destructive
+
+This tool never permanently deletes your files. Every time `init` or `sync` overwrites a file in your agent config directories (`~/.cursor/rules/`, `~/.codex/`, `~/.claude/`, etc.), the original is copied to a timestamped backup first. The same applies when `remove-rule` deletes a canonical rule file.
+
+Backups are stored at:
+
+```
+~/.ai-agent/backups/<timestamp>/files/
+```
+
+Each backup mirrors the original path relative to your home directory. For example, `~/.cursor/rules/my-rule.mdc` is backed up to `~/.ai-agent/backups/20260226T120000Z/files/.cursor/rules/my-rule.mdc`.
+
+Use `--verbose` with any command to see each backup as it happens.
+
 ## Reverting / Uninstalling
 
-To remove everything the sync tool has written to your agent configs:
+To undo a sync and restore your original agent config files:
 
 ```bash
 ~/.ai-agent/scripts/sync_agent_rules.py clean
 ```
 
-This scans each active target, lists what it will remove, and asks for confirmation. It deletes generated rule files (identified by their header) and removes skill symlinks pointing to `~/.ai-agent/skills/`. Your canonical source in `~/.ai-agent/` is not touched.
+This does three things:
+1. Lists all generated rule files and skill symlinks it will remove
+2. Removes them (generated files are identified by their `# Generated from ~/.ai-agent/` header)
+3. Restores the original files from the most recent backup
 
 Preview first with `--dry-run`:
 
 ```bash
 ~/.ai-agent/scripts/sync_agent_rules.py --dry-run clean
 ```
+
+Files marked `<- will restore from backup` in the preview will be restored to their pre-sync state.
 
 ## Verify It Worked
 
