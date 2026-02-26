@@ -120,6 +120,23 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="First-time import and setup")
     sub.add_parser("sync", help="Generate agent configs from canonical source")
     sub.add_parser("reconfigure", help="Change target selection")
+    sub.add_parser("status", help="Show current configuration and sync state")
+
+    add_p = sub.add_parser("add-rule", help="Add a new rule")
+    add_p.add_argument("id", help="Rule identifier (used as filename)")
+    add_p.add_argument("--description", default="", help="Cursor description")
+    add_p.add_argument("--always-apply", action="store_true", default=True)
+    add_p.add_argument("--no-always-apply", action="store_true")
+    add_p.add_argument("--file", type=str, help="Import content from file")
+    add_p.add_argument("--exclude", type=str, default="",
+                        help="Comma-separated agents to exclude")
+
+    rm_p = sub.add_parser("remove-rule", help="Remove a rule")
+    rm_p.add_argument("id", help="Rule identifier to remove")
+
+    set_p = sub.add_parser("set", help="Update a manifest field")
+    set_p.add_argument("key", help="Dotted key path (e.g. agents_md.paths)")
+    set_p.add_argument("value", help="New value (arrays comma-separated)")
 
     return parser
 
@@ -127,6 +144,16 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
+
+
+def section_header(title: str) -> None:
+    width = 50
+    print(f"\n─── {title} {'─' * max(1, width - len(title) - 5)}")
+
+
+def summary_line(label: str, count: int, detail: str = "") -> None:
+    extra = f"  ({detail})" if detail else ""
+    print(f"  {label:15s} {count}{extra}")
 
 
 def log(msg: str) -> None:
@@ -671,6 +698,57 @@ GENERATORS: dict[str, Any] = {
 }
 
 
+def cmd_status(args: argparse.Namespace) -> None:
+    manifest = read_manifest()
+
+    rules = manifest.get("rules", [])
+    section_header(f"Rules ({len(rules)})")
+    if rules:
+        for r in rules:
+            cursor = r.get("cursor", {})
+            flags = []
+            if cursor.get("alwaysApply"):
+                flags.append("alwaysApply")
+            if cursor.get("globs"):
+                flags.append(f"globs={cursor['globs']}")
+            flag_str = ", ".join(flags) if flags else ""
+            desc = cursor.get("description", "")
+            source = r.get("imported_from", "")
+            print(f"  {r['id']:30s} [{source:6s}]  {flag_str:20s} {desc}")
+    else:
+        print("  (none)")
+
+    section_header("Active Targets")
+    active = manifest.get("active_targets", {})
+    print(f"  Rules  -> {', '.join(active.get('rules', []))}")
+    print(f"  Skills -> {', '.join(active.get('skills', []))}")
+
+    skill_count = 0
+    if SKILLS_DIR.exists():
+        skill_count = len([d for d in SKILLS_DIR.iterdir() if d.is_dir()])
+    section_header(f"Skills ({skill_count})")
+    if SKILLS_DIR.exists() and skill_count:
+        names = sorted(d.name for d in SKILLS_DIR.iterdir() if d.is_dir())
+        for i in range(0, len(names), 4):
+            chunk = names[i:i + 4]
+            print(f"  {'  '.join(f'{n:20s}' for n in chunk)}")
+    else:
+        print("  (none)")
+
+    agents_md = manifest.get("agents_md", {})
+    paths = agents_md.get("paths", [])
+    section_header("AGENTS.md Paths")
+    if paths:
+        for p in paths:
+            print(f"  {p}")
+    else:
+        print("  (none configured)")
+
+    section_header("Last Synced")
+    print(f"  {manifest.get('updated', 'never')}")
+    print()
+
+
 def cmd_init(args: argparse.Namespace) -> None:
     print("\n=== AI Agent Rules - First-Time Setup ===\n")
 
@@ -939,6 +1017,14 @@ def main() -> None:
         cmd_sync(args)
     elif args.command == "reconfigure":
         cmd_reconfigure(args)
+    elif args.command == "status":
+        cmd_status(args)
+    elif args.command == "add-rule":
+        cmd_add_rule(args)
+    elif args.command == "remove-rule":
+        cmd_remove_rule(args)
+    elif args.command == "set":
+        cmd_set(args)
 
 
 if __name__ == "__main__":
