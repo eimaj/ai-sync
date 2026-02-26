@@ -964,6 +964,64 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
     print(f"\nDone. {rule_count} rule targets, {skill_count} skill targets synced.")
 
 
+def cmd_add_rule(args: argparse.Namespace) -> None:
+    manifest = read_manifest()
+    rule_id = args.id
+    rule_file = f"{rule_id}.md"
+    rule_path = RULES_DIR / rule_file
+
+    if rule_path.exists():
+        print(f"Error: rule '{rule_id}' already exists at {rule_path}")
+        sys.exit(1)
+
+    if args.file:
+        content = Path(args.file).expanduser().read_text()
+    else:
+        content = f"# {rule_id.replace('-', ' ').title()}\n\nTODO: Add rule content.\n"
+
+    rule_path.parent.mkdir(parents=True, exist_ok=True)
+    rule_path.write_text(content)
+    log(f"Created rules/{rule_file}")
+
+    entry: dict[str, Any] = {
+        "id": rule_id,
+        "file": rule_file,
+        "imported_from": "manual",
+    }
+    always_apply = not args.no_always_apply
+    cursor_meta: dict[str, Any] = {"alwaysApply": always_apply}
+    if args.description:
+        cursor_meta["description"] = args.description
+    entry["cursor"] = cursor_meta
+    if args.exclude:
+        entry["exclude"] = [x.strip() for x in args.exclude.split(",") if x.strip()]
+
+    manifest["rules"].append(entry)
+    write_manifest(manifest, args)
+    print()
+    cmd_sync(args, manifest=manifest)
+
+
+def cmd_remove_rule(args: argparse.Namespace) -> None:
+    manifest = read_manifest()
+    rule_id = args.id
+    rule_path = RULES_DIR / f"{rule_id}.md"
+
+    matches = [r for r in manifest["rules"] if r["id"] == rule_id]
+    if not matches:
+        print(f"Error: rule '{rule_id}' not found in manifest")
+        sys.exit(1)
+
+    if rule_path.exists():
+        rule_path.unlink()
+        log(f"Removed rules/{rule_id}.md")
+
+    manifest["rules"] = [r for r in manifest["rules"] if r["id"] != rule_id]
+    write_manifest(manifest, args)
+    print()
+    cmd_sync(args, manifest=manifest)
+
+
 def cmd_reconfigure(args: argparse.Namespace) -> None:
     manifest = read_manifest()
 
