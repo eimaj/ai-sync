@@ -1226,6 +1226,11 @@ def cmd_add_rule(args: argparse.Namespace) -> None:
     else:
         content = f"# {rule_id.replace('-', ' ').title()}\n\nTODO: Add rule content.\n"
 
+    if args.dry_run:
+        log(f"{C.MAGENTA}[dry-run]{C.RESET} Would create rules/{rule_file}")
+        log(f"{C.MAGENTA}[dry-run]{C.RESET} Would add '{rule_id}' to manifest and sync")
+        return
+
     rule_path.parent.mkdir(parents=True, exist_ok=True)
     rule_path.write_text(content)
     log(f"{C.GREEN}Created{C.RESET} rules/{rule_file}")
@@ -1258,6 +1263,11 @@ def cmd_remove_rule(args: argparse.Namespace) -> None:
     if not matches:
         print(f"{C.BOLD_RED}Error:{C.RESET} rule '{rule_id}' not found in manifest")
         sys.exit(1)
+
+    if args.dry_run:
+        log(f"{C.MAGENTA}[dry-run]{C.RESET} Would remove rules/{rule_id}.md")
+        log(f"{C.MAGENTA}[dry-run]{C.RESET} Would remove '{rule_id}' from manifest and sync")
+        return
 
     init_backup("remove-rule")
 
