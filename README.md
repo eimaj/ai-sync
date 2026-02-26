@@ -13,16 +13,18 @@ Edit rules once in `~/.ai-agent/rules/`, run `sync`, and every agent gets update
 
 ## 📑 Table of Contents
 
-- [Supported Agents](#-supported-agents)
-- [Quick Start](#-quick-start)
-- [Nothing Is Destructive](#️-nothing-is-destructive)
-- [Commands](#-commands)
-- [AGENTS.md Paths](#-agentsmd-paths)
-- [How It Works](#-how-it-works)
-- [Directory Structure](#-directory-structure)
-- [Reverting / Uninstalling](#-reverting--uninstalling)
-- [Testing](#-testing)
-- [Verify It Worked](#-verify-it-worked)
+- [🤖 Supported Agents](#-supported-agents)
+- [🚀 Quick Start](#-quick-start)
+- [🛡️ Nothing Is Destructive](#️-nothing-is-destructive)
+- [📖 Commands](#-commands)
+- [📋 AGENTS.md Paths](#-agentsmd-paths)
+- [⚡ How It Works](#-how-it-works)
+- [📁 Directory Structure](#-directory-structure)
+- [⏪ Reverting / Uninstalling](#-reverting--uninstalling)
+- [🧪 Testing](#-testing)
+- [✅ Verify It Worked](#-verify-it-worked)
+
+---
 
 ## 🤖 Supported Agents
 
@@ -35,6 +37,8 @@ Edit rules once in `~/.ai-agent/rules/`, run `sync`, and every agent gets update
 | Kiro | `steering/conventions.md` | -- |
 | Antigravity | -- | Symlinks |
 | AGENTS.md | Condensed numbered list | -- |
+
+---
 
 ## 🚀 Quick Start
 
@@ -66,6 +70,8 @@ alias sync-ai-rules='~/.ai-agent/scripts/sync_agent_rules.py'
 
 All examples below use this alias.
 
+---
+
 ## 🛡️ Nothing Is Destructive
 
 This tool **never permanently deletes your files**. Every time `init` or `sync` overwrites a file in your agent config directories, the original is copied to a timestamped backup first. The same applies when `remove-rule` deletes a canonical rule file.
@@ -73,6 +79,8 @@ This tool **never permanently deletes your files**. Every time `init` or `sync` 
 Backups are stored at `~/.ai-agent/backups/<timestamp>/files/`, mirroring the original path relative to your home directory.
 
 Use `--verbose` with any command to see each backup as it happens.
+
+---
 
 ## 📖 Commands
 
@@ -139,6 +147,8 @@ sync-ai-rules reconfigure
 | `--only <agent>` | Sync a single agent |
 | `--yes` | Accept defaults, skip prompts |
 
+---
+
 ## 📋 AGENTS.md Paths
 
 `AGENTS.md` is a cross-tool standard for embedding rules directly in a repository. Some tools read it automatically:
@@ -166,6 +176,8 @@ sync-ai-rules set agents_md.paths "~/Code/**/AGENTS.md"
 
 Wildcards expand at sync time using Python's `glob`. A pattern like `~/Code/**/AGENTS.md` finds all existing `AGENTS.md` files recursively. If a path points to a directory instead of a file, `/AGENTS.md` is appended automatically. Non-glob paths that don't exist yet are created on sync.
 
+---
+
 ## ⚡ How It Works
 
 **`init`** scans your existing agent configs (Cursor `.mdc`, Codex `model-instructions.md`, etc.), deduplicates across sources, and lets you cherry-pick which rules and skills to import via interactive multi-select. It writes canonical plain-markdown files to `rules/`, copies shared skills to `skills/`, and creates `manifest.json`.
@@ -181,6 +193,8 @@ Wildcards expand at sync time using Python's `glob`. A pattern like `~/Code/**/A
 | **Skills** | Creates symlinks from agent dirs to `~/.ai-agent/skills/` |
 
 All generated files include a `# Generated from ~/.ai-agent/` header so the tool can detect and skip them during re-import.
+
+---
 
 ## 📁 Directory Structure
 
@@ -198,6 +212,8 @@ All generated files include a `# Generated from ~/.ai-agent/` header so the tool
 ```
 
 The script is version-controlled. Your personal rules, skills, config, and backups stay local.
+
+---
 
 ## ⏪ Reverting / Uninstalling
 
@@ -221,6 +237,8 @@ sync-ai-rules --dry-run clean
 
 Files marked `<- will restore from backup` in the preview will be restored to their pre-sync state.
 
+---
+
 ## 🧪 Testing
 
 Install dev dependencies and run the suite:
@@ -239,6 +257,8 @@ A git hook runs the full test suite before every push. To enable it after clonin
 ```bash
 git config core.hooksPath .githooks
 ```
+
+---
 
 ## ✅ Verify It Worked
 
