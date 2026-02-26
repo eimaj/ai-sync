@@ -24,6 +24,39 @@ except ImportError:
     _HAS_CURSES = False
 
 # ---------------------------------------------------------------------------
+# Terminal colors (respects NO_COLOR and non-TTY)
+# ---------------------------------------------------------------------------
+
+_USE_COLOR = (
+    sys.stdout.isatty()
+    and os.environ.get("NO_COLOR") is None
+    and os.environ.get("TERM") != "dumb"
+)
+
+
+def _ansi(code: str) -> str:
+    return f"\033[{code}m" if _USE_COLOR else ""
+
+
+class C:
+    """ANSI escape sequences, empty strings when color is disabled."""
+    RESET = _ansi("0")
+    BOLD = _ansi("1")
+    DIM = _ansi("2")
+    RED = _ansi("31")
+    GREEN = _ansi("32")
+    YELLOW = _ansi("33")
+    BLUE = _ansi("34")
+    MAGENTA = _ansi("35")
+    CYAN = _ansi("36")
+    BOLD_RED = _ansi("1;31")
+    BOLD_GREEN = _ansi("1;32")
+    BOLD_YELLOW = _ansi("1;33")
+    BOLD_CYAN = _ansi("1;36")
+    BOLD_WHITE = _ansi("1;37")
+
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -131,11 +164,11 @@ def backup_file(path: Path, args: argparse.Namespace) -> None:
     if dest is None:
         return
     if args.dry_run:
-        log_verbose(f"[dry-run] Would backup {path}", args)
+        log_verbose(f"{C.MAGENTA}[dry-run]{C.RESET} Would backup {path}", args)
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(path, dest)
-    log_verbose(f"Backed up {path}", args)
+    log_verbose(f"{C.BLUE}Backed up{C.RESET} {path}", args)
 
 
 def backup_directory(path: Path, args: argparse.Namespace) -> None:
@@ -146,12 +179,12 @@ def backup_directory(path: Path, args: argparse.Namespace) -> None:
     if dest is None:
         return
     if args.dry_run:
-        log_verbose(f"[dry-run] Would backup dir {path}", args)
+        log_verbose(f"{C.MAGENTA}[dry-run]{C.RESET} Would backup dir {path}", args)
         return
     if dest.exists():
         shutil.rmtree(dest)
     shutil.copytree(path, dest, symlinks=False)
-    log_verbose(f"Backed up dir {path}", args)
+    log_verbose(f"{C.BLUE}Backed up dir{C.RESET} {path}", args)
 
 
 def latest_backup() -> Optional[Path]:
@@ -181,12 +214,12 @@ def restore_from_backup(backup_dir: Path, targets: list[Path],
         if str(original) not in target_set:
             continue
         if args.dry_run:
-            log_verbose(f"[dry-run] Would restore {original}", args)
+            log_verbose(f"{C.MAGENTA}[dry-run]{C.RESET} Would restore {original}", args)
             count += 1
             continue
         original.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(backed_up, original)
-        log_verbose(f"Restored {original}", args)
+        log_verbose(f"{C.GREEN}Restored{C.RESET} {original}", args)
         count += 1
     return count
 
@@ -262,12 +295,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def section_header(title: str) -> None:
     width = 50
-    print(f"\n─── {title} {'─' * max(1, width - len(title) - 5)}")
+    rule = "─" * max(1, width - len(title) - 5)
+    print(f"\n{C.BOLD_CYAN}─── {title} {rule}{C.RESET}")
 
 
 def summary_line(label: str, count: int, detail: str = "") -> None:
-    extra = f"  ({detail})" if detail else ""
-    print(f"  {label:15s} {count}{extra}")
+    extra = f"  {C.DIM}({detail}){C.RESET}" if detail else ""
+    print(f"  {label:15s} {C.BOLD}{count}{C.RESET}{extra}")
 
 
 def log(msg: str) -> None:
@@ -276,11 +310,11 @@ def log(msg: str) -> None:
 
 def log_verbose(msg: str, args: argparse.Namespace) -> None:
     if args.verbose:
-        print(f"  [verbose] {msg}")
+        print(f"  {C.DIM}[verbose] {msg}{C.RESET}")
 
 
 def confirm(prompt: str, default: bool = True) -> bool:
-    suffix = "[Y/n]" if default else "[y/N]"
+    suffix = f"{C.BOLD}[Y/n]{C.RESET}" if default else f"{C.BOLD}[y/N]{C.RESET}"
     answer = input(f"{prompt} {suffix} ").strip().lower()
     if not answer:
         return default
@@ -374,7 +408,7 @@ def multi_select(
         print(f"\n{prompt}")
         for oid in (defaults or []):
             label = next((lbl for o, lbl in options if o == oid), oid)
-            print(f"  [auto] {label}")
+            print(f"  {C.DIM}[auto]{C.RESET} {label}")
         return defaults or []
 
     if _HAS_CURSES and sys.stdin.isatty() and sys.stdout.isatty():
@@ -400,7 +434,7 @@ def generated_header() -> str:
 def write_file(path: Path, content: str, args: argparse.Namespace) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if args.dry_run:
-        log_verbose(f"[dry-run] Would write {path} ({len(content)} bytes)", args)
+        log_verbose(f"{C.MAGENTA}[dry-run]{C.RESET} Would write {path} ({len(content)} bytes)", args)
         return
     if args.diff and path.exists():
         existing = path.read_text()
@@ -414,22 +448,22 @@ def write_file(path: Path, content: str, args: argparse.Namespace) -> None:
         if diff_text:
             print(diff_text)
         else:
-            log_verbose(f"{path} (unchanged)", args)
+            log_verbose(f"{path} {C.DIM}(unchanged){C.RESET}", args)
             return
     if path.exists():
         backup_file(path, args)
     path.write_text(content)
-    log_verbose(f"Wrote {path}", args)
+    log_verbose(f"{C.GREEN}Wrote{C.RESET} {path}", args)
 
 
 def remove_file(path: Path, args: argparse.Namespace) -> None:
     if args.dry_run:
-        log_verbose(f"[dry-run] Would remove {path}", args)
+        log_verbose(f"{C.MAGENTA}[dry-run]{C.RESET} Would remove {path}", args)
         return
     if path.exists() and not path.is_symlink():
         backup_file(path, args)
     path.unlink(missing_ok=True)
-    log_verbose(f"Removed {path}", args)
+    log_verbose(f"{C.YELLOW}Removed{C.RESET} {path}", args)
 
 
 # ---------------------------------------------------------------------------
@@ -491,7 +525,7 @@ def build_frontmatter(meta: dict[str, Any]) -> str:
 
 def read_manifest() -> dict[str, Any]:
     if not MANIFEST_PATH.exists():
-        print(f"Error: {MANIFEST_PATH} not found. Run 'init' first.")
+        print(f"{C.BOLD_RED}Error:{C.RESET} {MANIFEST_PATH} not found. Run 'init' first.")
         sys.exit(1)
     return json.loads(MANIFEST_PATH.read_text())
 
@@ -511,13 +545,13 @@ def import_cursor() -> tuple[list[ImportedRule], list[Path]]:
     rules_dir = AGENT_PATHS["cursor"]["rules_dir"]
     rules: list[ImportedRule] = []
     if not rules_dir.exists():
-        log("  Cursor: no rules directory found, skipping")
+        log(f"  {C.DIM}Cursor: no rules directory found, skipping{C.RESET}")
         return rules, []
     for f in sorted(rules_dir.glob("*.mdc")):
         text = f.read_text()
         meta, body = parse_frontmatter(text)
         if is_generated_file(body):
-            log(f"  Cursor: skipping generated file {f.name}")
+            log(f"  {C.DIM}Cursor: skipping generated file {f.name}{C.RESET}")
             continue
         rid = f.stem
         cursor_meta = {}
@@ -531,7 +565,7 @@ def import_cursor() -> tuple[list[ImportedRule], list[Path]]:
             id=rid, content=body, source="cursor",
             cursor_meta=cursor_meta or None,
         ))
-        log(f"  Cursor: imported {f.name} ({len(body.splitlines())} lines)")
+        log(f"  {C.GREEN}Cursor:{C.RESET} imported {f.name} {C.DIM}({len(body.splitlines())} lines){C.RESET}")
     skills = _scan_skills(AGENT_PATHS["cursor"].get("skills_dir"))
     return rules, skills
 
@@ -540,11 +574,11 @@ def import_codex() -> tuple[list[ImportedRule], list[Path]]:
     rules_file = AGENT_PATHS["codex"]["rules_file"]
     rules: list[ImportedRule] = []
     if not rules_file.exists():
-        log("  Codex: no model-instructions.md found, skipping")
+        log(f"  {C.DIM}Codex: no model-instructions.md found, skipping{C.RESET}")
         return rules, []
     text = rules_file.read_text()
     if is_generated_file(text):
-        log("  Codex: skipping generated model-instructions.md")
+        log(f"  {C.DIM}Codex: skipping generated model-instructions.md{C.RESET}")
         return rules, []
     sections = re.split(r"^## Source:\s*(.+)$", text, flags=re.MULTILINE)
     # sections[0] is preamble, then alternating (header, content)
@@ -553,7 +587,7 @@ def import_codex() -> tuple[list[ImportedRule], list[Path]]:
         content = sections[i + 1].strip() if i + 1 < len(sections) else ""
         rid = re.sub(r"\.mdc$", "", header)
         rules.append(ImportedRule(id=rid, content=content, source="codex"))
-        log(f"  Codex: imported section '{header}' ({len(content.splitlines())} lines)")
+        log(f"  {C.GREEN}Codex:{C.RESET} imported section '{header}' {C.DIM}({len(content.splitlines())} lines){C.RESET}")
     skills = _scan_skills(AGENT_PATHS["codex"].get("skills_dir"))
     return rules, skills
 
@@ -572,16 +606,16 @@ def import_kiro() -> tuple[list[ImportedRule], list[Path]]:
     steering_dir = Path.home() / ".kiro" / "steering"
     rules: list[ImportedRule] = []
     if not steering_dir.exists():
-        log("  Kiro: no steering directory found, skipping")
+        log(f"  {C.DIM}Kiro: no steering directory found, skipping{C.RESET}")
         return rules, []
     for f in sorted(steering_dir.glob("*.md")):
         text = f.read_text()
         if is_generated_file(text):
-            log(f"  Kiro: skipping generated file {f.name}")
+            log(f"  {C.DIM}Kiro: skipping generated file {f.name}{C.RESET}")
             continue
         rid = f.stem
         rules.append(ImportedRule(id=rid, content=text.strip(), source="kiro"))
-        log(f"  Kiro: imported {f.name} ({len(text.splitlines())} lines)")
+        log(f"  {C.GREEN}Kiro:{C.RESET} imported {f.name} {C.DIM}({len(text.splitlines())} lines){C.RESET}")
     return rules, []
 
 
@@ -589,11 +623,11 @@ def _import_single_file(agent: str, path: Path) -> tuple[list[ImportedRule], lis
     label = AGENT_PATHS[agent]["label"]
     rules: list[ImportedRule] = []
     if not path.exists():
-        log(f"  {label}: no {path.name} found, skipping")
+        log(f"  {C.DIM}{label}: no {path.name} found, skipping{C.RESET}")
         return rules, []
     text = path.read_text()
     if is_generated_file(text):
-        log(f"  {label}: skipping generated {path.name}")
+        log(f"  {C.DIM}{label}: skipping generated {path.name}{C.RESET}")
         return rules, []
     sections = re.split(r"^(# .+)$", text, flags=re.MULTILINE)
     for i in range(1, len(sections), 2):
@@ -602,7 +636,7 @@ def _import_single_file(agent: str, path: Path) -> tuple[list[ImportedRule], lis
         full_content = sections[i] + "\n" + content
         rid = re.sub(r"[^a-z0-9]+", "-", heading.lower()).strip("-")
         rules.append(ImportedRule(id=rid, content=full_content.strip(), source=agent))
-        log(f"  {label}: imported '{heading}' ({len(content.splitlines())} lines)")
+        log(f"  {C.GREEN}{label}:{C.RESET} imported '{heading}' {C.DIM}({len(content.splitlines())} lines){C.RESET}")
     return rules, []
 
 
@@ -633,11 +667,11 @@ def import_skills(skill_dirs: list[Path], args: argparse.Namespace) -> int:
             log_verbose(f"Skill '{src.name}' already exists, skipping", args)
             continue
         if args.dry_run:
-            log(f"[dry-run] Would copy skill {src.name}")
+            log(f"{C.MAGENTA}[dry-run]{C.RESET} Would copy skill {src.name}")
             count += 1
             continue
         shutil.copytree(src, dest, symlinks=False)
-        log(f"  Copied skill: {src.name}")
+        log(f"  {C.GREEN}Copied skill:{C.RESET} {src.name}")
         count += 1
     return count
 
@@ -664,10 +698,10 @@ def deduplicate_rules(all_rules: list[ImportedRule], args: argparse.Namespace) -
             existing = seen[rule.id]
             ratio = difflib.SequenceMatcher(None, existing.content, rule.content).ratio()
             if ratio > 0.8:
-                log(f"  Duplicate '{rule.id}' from {rule.source} matches {existing.source} ({ratio:.0%}), skipping")
+                log(f"  {C.DIM}Duplicate '{rule.id}' from {rule.source} matches {existing.source} ({ratio:.0%}), skipping{C.RESET}")
                 continue
             else:
-                log(f"  Warning: '{rule.id}' from {rule.source} differs from {existing.source} ({ratio:.0%})")
+                log(f"  {C.BOLD_YELLOW}Warning:{C.RESET} '{rule.id}' from {rule.source} differs from {existing.source} ({ratio:.0%})")
                 if not args.yes:
                     diff = difflib.unified_diff(
                         existing.content.splitlines(keepends=True),
@@ -770,7 +804,7 @@ def _expand_agents_md_paths(paths: list[str]) -> list[Path]:
         if any(c in expanded for c in ("*", "?", "[")):
             matches = sorted(globmod.glob(expanded, recursive=True))
             if not matches:
-                log(f"  Warning: glob '{p}' matched no files")
+                log(f"  {C.BOLD_YELLOW}Warning:{C.RESET} glob '{p}' matched no files")
             for m in matches:
                 target = Path(m)
                 if target.is_dir():
@@ -788,7 +822,7 @@ def gen_agents_md(manifest: dict, args: argparse.Namespace) -> None:
     agents_md_config = manifest.get("agents_md", {})
     raw_paths = agents_md_config.get("paths", [])
     if not raw_paths:
-        log("  AGENTS.md: no paths configured, skipping")
+        log(f"  {C.DIM}AGENTS.md: no paths configured, skipping{C.RESET}")
         return
 
     targets = _expand_agents_md_paths(raw_paths)
@@ -877,7 +911,7 @@ def sync_skills(target_dir: Path, args: argparse.Namespace) -> None:
                 log_verbose(f"Skipping {link} (not a symlink, preserving)", args)
                 continue
         if args.dry_run:
-            log(f"[dry-run] Would symlink {link} -> {target}")
+            log(f"{C.MAGENTA}[dry-run]{C.RESET} Would symlink {link} -> {target}")
             continue
         link.symlink_to(target)
         log_verbose(f"Symlinked {link.name}", args)
@@ -923,14 +957,14 @@ def cmd_status(args: argparse.Namespace) -> None:
             flag_str = ", ".join(flags) if flags else ""
             desc = cursor.get("description", "")
             source = r.get("imported_from", "")
-            print(f"  {r['id']:30s} [{source:6s}]  {flag_str:20s} {desc}")
+            print(f"  {C.BOLD}{r['id']:30s}{C.RESET} {C.DIM}[{source:6s}]{C.RESET}  {flag_str:20s} {desc}")
     else:
-        print("  (none)")
+        print(f"  {C.DIM}(none){C.RESET}")
 
     section_header("Active Targets")
     active = manifest.get("active_targets", {})
-    print(f"  Rules  -> {', '.join(active.get('rules', []))}")
-    print(f"  Skills -> {', '.join(active.get('skills', []))}")
+    print(f"  {C.BOLD_WHITE}Rules{C.RESET}  -> {C.GREEN}{', '.join(active.get('rules', []))}{C.RESET}")
+    print(f"  {C.BOLD_WHITE}Skills{C.RESET} -> {C.GREEN}{', '.join(active.get('skills', []))}{C.RESET}")
 
     skill_count = 0
     if SKILLS_DIR.exists():
@@ -942,7 +976,7 @@ def cmd_status(args: argparse.Namespace) -> None:
             chunk = names[i:i + 4]
             print(f"  {'  '.join(f'{n:20s}' for n in chunk)}")
     else:
-        print("  (none)")
+        print(f"  {C.DIM}(none){C.RESET}")
 
     agents_md = manifest.get("agents_md", {})
     paths = agents_md.get("paths", [])
@@ -951,7 +985,7 @@ def cmd_status(args: argparse.Namespace) -> None:
         for p in paths:
             print(f"  {p}")
     else:
-        print("  (none configured)")
+        print(f"  {C.DIM}(none configured){C.RESET}")
 
     section_header("Last Synced")
     print(f"  {manifest.get('updated', 'never')}")
@@ -959,17 +993,17 @@ def cmd_status(args: argparse.Namespace) -> None:
 
 
 def cmd_init(args: argparse.Namespace) -> None:
-    print("\n=== AI Agent Rules - First-Time Setup ===\n")
+    print(f"\n{C.BOLD_CYAN}=== AI Agent Rules - First-Time Setup ==={C.RESET}\n")
 
     # Warn if canonical content already exists
     existing = [p for p in (MANIFEST_PATH, RULES_DIR, SKILLS_DIR) if p.exists()]
     if existing:
-        print("  Warning: init will overwrite existing canonical content in ~/.ai-agent/:")
+        print(f"  {C.BOLD_YELLOW}Warning:{C.RESET} init will overwrite existing canonical content in ~/.ai-agent/:")
         for p in existing:
-            print(f"    - {p}")
-        print("\n  Source agent files (e.g., ~/.cursor/rules/) are only read, never modified.\n")
+            print(f"    {C.YELLOW}-{C.RESET} {p}")
+        print(f"\n  Source agent files (e.g., ~/.cursor/rules/) are {C.GREEN}only read, never modified{C.RESET}.\n")
         if not args.yes and not confirm("  Proceed?"):
-            print("  Aborted.")
+            print(f"  {C.DIM}Aborted.{C.RESET}")
             return
 
     # Step 1: Select sources
@@ -990,11 +1024,11 @@ def cmd_init(args: argparse.Namespace) -> None:
         auto_accept=args.yes,
     )
     if not sources:
-        print("  No sources selected. Aborted.")
+        print(f"  {C.DIM}No sources selected. Aborted.{C.RESET}")
         return
 
     # Step 2: Scan and import
-    print("\nStep 2: Scanning selected sources...\n")
+    print(f"\n{C.BOLD}Step 2:{C.RESET} Scanning selected sources...\n")
     all_rules: list[ImportedRule] = []
     all_skills: list[Path] = []
     for src in sources:
@@ -1022,7 +1056,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         auto_accept=args.yes,
     )
     if not selected_rule_ids:
-        print("  No rules selected. Aborted.")
+        print(f"  {C.DIM}No rules selected. Aborted.{C.RESET}")
         return
     all_rules = [r for r in all_rules if r.id in selected_rule_ids]
 
@@ -1042,7 +1076,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         )
         all_skills = [s for s in all_skills if s.name in selected_skill_names]
 
-    print(f"\n  Selected: {len(all_rules)} rules, {len(all_skills)} skills")
+    print(f"\n  {C.GREEN}Selected:{C.RESET} {C.BOLD}{len(all_rules)}{C.RESET} rules, {C.BOLD}{len(all_skills)}{C.RESET} skills")
 
     # Step 3: Select targets
     rule_target_options = [
@@ -1088,7 +1122,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         filename = f"{rule.id}.md"
         rule_path = RULES_DIR / filename
         rule_path.write_text(rule.content + "\n")
-        log(f"Created rules/{filename}")
+        log(f"{C.GREEN}Created{C.RESET} rules/{filename}")
         entry: dict[str, Any] = {
             "id": rule.id,
             "file": filename,
@@ -1125,7 +1159,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     log(f"Wrote {MANIFEST_PATH}")
 
     cmd_sync(args, manifest=manifest)
-    print("Done! Edit rules in ~/.ai-agent/rules/ and run 'sync' to propagate.")
+    print(f"{C.BOLD_GREEN}Done!{C.RESET} Edit rules in ~/.ai-agent/rules/ and run 'sync' to propagate.")
 
 
 def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
@@ -1140,7 +1174,7 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
 
     if args.only:
         if args.only not in GENERATORS:
-            print(f"Error: unknown agent '{args.only}'. Options: {', '.join(GENERATORS)}")
+            print(f"{C.BOLD_RED}Error:{C.RESET} unknown agent '{args.only}'. Options: {', '.join(GENERATORS)}")
             sys.exit(1)
         active_rules = [args.only] if args.only in active_rules else []
         active_skills = [args.only] if args.only in active_skills else []
@@ -1170,8 +1204,8 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
         MANIFEST_PATH.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
 
     section_header("Summary")
-    dry = " (dry-run)" if args.dry_run else ""
-    print(f"  {rule_count} rule targets, {skill_count} skill targets synced.{dry}")
+    dry = f" {C.MAGENTA}(dry-run){C.RESET}" if args.dry_run else ""
+    print(f"  {C.BOLD}{rule_count}{C.RESET} rule targets, {C.BOLD}{skill_count}{C.RESET} skill targets synced.{dry}")
     print()
 
 
@@ -1184,7 +1218,7 @@ def cmd_add_rule(args: argparse.Namespace) -> None:
 
     existing_ids = {r["id"] for r in manifest.get("rules", [])}
     if rule_id in existing_ids or rule_path.exists():
-        print(f"Error: rule '{rule_id}' already exists")
+        print(f"{C.BOLD_RED}Error:{C.RESET} rule '{rule_id}' already exists")
         sys.exit(1)
 
     if args.file:
@@ -1194,7 +1228,7 @@ def cmd_add_rule(args: argparse.Namespace) -> None:
 
     rule_path.parent.mkdir(parents=True, exist_ok=True)
     rule_path.write_text(content)
-    log(f"Created rules/{rule_file}")
+    log(f"{C.GREEN}Created{C.RESET} rules/{rule_file}")
 
     entry: dict[str, Any] = {
         "id": rule_id,
@@ -1222,7 +1256,7 @@ def cmd_remove_rule(args: argparse.Namespace) -> None:
 
     matches = [r for r in manifest["rules"] if r["id"] == rule_id]
     if not matches:
-        print(f"Error: rule '{rule_id}' not found in manifest")
+        print(f"{C.BOLD_RED}Error:{C.RESET} rule '{rule_id}' not found in manifest")
         sys.exit(1)
 
     init_backup("remove-rule")
@@ -1230,7 +1264,7 @@ def cmd_remove_rule(args: argparse.Namespace) -> None:
     if rule_path.exists():
         backup_file(rule_path, args)
         rule_path.unlink()
-        log(f"Removed rules/{rule_id}.md")
+        log(f"{C.YELLOW}Removed{C.RESET} rules/{rule_id}.md")
 
     manifest["rules"] = [r for r in manifest["rules"] if r["id"] != rule_id]
     write_manifest(manifest, args)
@@ -1244,7 +1278,7 @@ def cmd_set(args: argparse.Namespace) -> None:
 
     if key not in SETTABLE_KEYS:
         supported = ", ".join(sorted(SETTABLE_KEYS))
-        print(f"Error: unsupported key '{key}'. Supported: {supported}")
+        print(f"{C.BOLD_RED}Error:{C.RESET} unsupported key '{key}'. Supported: {supported}")
         sys.exit(1)
 
     section, field, kind = SETTABLE_KEYS[key]
@@ -1254,7 +1288,7 @@ def cmd_set(args: argparse.Namespace) -> None:
         manifest[section][field] = args.value
 
     write_manifest(manifest, args)
-    print(f"  Set {key} = {manifest[section][field]}")
+    print(f"  {C.GREEN}Set{C.RESET} {C.BOLD}{key}{C.RESET} = {manifest[section][field]}")
 
 
 def _find_generated_rules(manifest: dict) -> list[Path]:
@@ -1325,51 +1359,51 @@ def cmd_clean(args: argparse.Namespace) -> None:
                         restorable.append(original)
 
     if not rule_files and not skill_links:
-        print("\n  Nothing to clean -- no generated files or skill symlinks found.")
+        print(f"\n  {C.GREEN}Nothing to clean{C.RESET} -- no generated files or skill symlinks found.")
         return
 
     section_header(f"Generated rule files ({len(rule_files)})")
     for f in rule_files:
         has_backup = f in restorable
-        tag = " <- will restore from backup" if has_backup else ""
+        tag = f" {C.BLUE}<- will restore from backup{C.RESET}" if has_backup else ""
         print(f"  {f}{tag}")
 
     section_header(f"Skill symlinks ({len(skill_links)})")
     for s in skill_links:
         print(f"  {s}")
 
-    print(f"\n  Total: {len(rule_files)} generated, {len(skill_links)} symlinks")
+    print(f"\n  Total: {C.BOLD}{len(rule_files)}{C.RESET} generated, {C.BOLD}{len(skill_links)}{C.RESET} symlinks")
     if restorable:
-        print(f"  {len(restorable)} files will be restored from backup ({backup.name})")
-    print("  Your canonical source in ~/.ai-agent/ is not affected.\n")
+        print(f"  {C.BLUE}{len(restorable)} files will be restored from backup{C.RESET} ({backup.name})")
+    print(f"  Your canonical source in ~/.ai-agent/ is {C.GREEN}not affected{C.RESET}.\n")
 
     if not args.yes and not confirm("  Proceed?"):
-        print("  Aborted.")
+        print(f"  {C.DIM}Aborted.{C.RESET}")
         return
 
     for f in rule_files:
         if args.dry_run:
-            log_verbose(f"[dry-run] Would remove {f}", args)
+            log_verbose(f"{C.MAGENTA}[dry-run]{C.RESET} Would remove {f}", args)
         else:
             f.unlink(missing_ok=True)
-            log_verbose(f"Removed {f}", args)
+            log_verbose(f"{C.YELLOW}Removed{C.RESET} {f}", args)
 
     for s in skill_links:
         if args.dry_run:
-            log_verbose(f"[dry-run] Would remove symlink {s}", args)
+            log_verbose(f"{C.MAGENTA}[dry-run]{C.RESET} Would remove symlink {s}", args)
         else:
             s.unlink(missing_ok=True)
-            log_verbose(f"Removed symlink {s}", args)
+            log_verbose(f"{C.YELLOW}Removed symlink{C.RESET} {s}", args)
 
     restored = 0
     if backup and restorable:
         restored = restore_from_backup(backup, restorable, args)
 
     section_header("Summary")
-    dry = " (dry-run)" if args.dry_run else ""
-    print(f"  {len(rule_files)} generated removed, {len(skill_links)} symlinks removed")
+    dry = f" {C.MAGENTA}(dry-run){C.RESET}" if args.dry_run else ""
+    print(f"  {C.BOLD}{len(rule_files)}{C.RESET} generated removed, {C.BOLD}{len(skill_links)}{C.RESET} symlinks removed")
     if restored:
-        print(f"  {restored} files restored from backup")
+        print(f"  {C.GREEN}{restored} files restored from backup{C.RESET}")
     print(f"  {dry}" if dry else "")
     print()
 
@@ -1377,9 +1411,9 @@ def cmd_clean(args: argparse.Namespace) -> None:
 def cmd_reconfigure(args: argparse.Namespace) -> None:
     manifest = read_manifest()
 
-    print("\n=== Reconfigure Sync Targets ===\n")
-    print(f"  Current rule targets: {', '.join(manifest['active_targets']['rules'])}")
-    print(f"  Current skill targets: {', '.join(manifest['active_targets']['skills'])}")
+    print(f"\n{C.BOLD_CYAN}=== Reconfigure Sync Targets ==={C.RESET}\n")
+    print(f"  Current rule targets:  {C.GREEN}{', '.join(manifest['active_targets']['rules'])}{C.RESET}")
+    print(f"  Current skill targets: {C.GREEN}{', '.join(manifest['active_targets']['skills'])}{C.RESET}")
 
     rule_target_options = [
         (k, f"{AGENT_PATHS[k]['label']}  ({AGENT_PATHS[k]['description']})")
