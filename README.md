@@ -11,6 +11,19 @@ Sync AI coding assistant rules and skills from a single canonical source to mult
 
 Edit rules once in `~/.ai-agent/rules/`, run `sync`, and every agent gets updated in its native format.
 
+## 📑 Table of Contents
+
+- [Supported Agents](#-supported-agents)
+- [Quick Start](#-quick-start)
+- [Nothing Is Destructive](#️-nothing-is-destructive)
+- [Commands](#-commands)
+- [AGENTS.md Paths](#-agentsmd-paths)
+- [How It Works](#-how-it-works)
+- [Directory Structure](#-directory-structure)
+- [Reverting / Uninstalling](#-reverting--uninstalling)
+- [Testing](#-testing)
+- [Verify It Worked](#-verify-it-worked)
+
 ## 🤖 Supported Agents
 
 | Agent | Rules Format | Skills |
