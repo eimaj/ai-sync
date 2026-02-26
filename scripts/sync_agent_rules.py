@@ -297,7 +297,7 @@ def generated_header() -> str:
 def write_file(path: Path, content: str, args: argparse.Namespace) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if args.dry_run:
-        log(f"[dry-run] Would write {path} ({len(content)} bytes)")
+        log_verbose(f"[dry-run] Would write {path} ({len(content)} bytes)", args)
         return
     if args.diff and path.exists():
         existing = path.read_text()
@@ -311,18 +311,18 @@ def write_file(path: Path, content: str, args: argparse.Namespace) -> None:
         if diff_text:
             print(diff_text)
         else:
-            log(f"  {path} (unchanged)")
+            log_verbose(f"{path} (unchanged)", args)
             return
     path.write_text(content)
-    log(f"  Wrote {path}")
+    log_verbose(f"Wrote {path}", args)
 
 
 def remove_file(path: Path, args: argparse.Namespace) -> None:
     if args.dry_run:
-        log(f"[dry-run] Would remove {path}")
+        log_verbose(f"[dry-run] Would remove {path}", args)
         return
     path.unlink(missing_ok=True)
-    log(f"  Removed {path}")
+    log_verbose(f"Removed {path}", args)
 
 
 # ---------------------------------------------------------------------------
@@ -961,8 +961,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         if raw:
             agents_md_paths = [p.strip() for p in raw.split(",") if p.strip()]
 
-    # Step 5: Write canonical content
-    print("\nStep 4: Writing canonical source...\n")
+    section_header("Writing canonical source")
 
     # Clean existing canonical dirs
     if RULES_DIR.exists():
@@ -1010,11 +1009,8 @@ def cmd_init(args: argparse.Namespace) -> None:
     MANIFEST_PATH.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
     log(f"Wrote {MANIFEST_PATH}")
 
-    # Step 6: First sync
-    print("\nStep 5: Running first sync...\n")
     cmd_sync(args, manifest=manifest)
-
-    print("\nDone! Edit rules in ~/.ai-agent/rules/ and run 'sync' to propagate.\n")
+    print("Done! Edit rules in ~/.ai-agent/rules/ and run 'sync' to propagate.")
 
 
 def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
@@ -1031,33 +1027,34 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
         active_rules = [args.only] if args.only in active_rules else []
         active_skills = [args.only] if args.only in active_skills else []
 
-    print("Syncing rules...")
+    section_header("Rules")
     rule_count = 0
     for target in active_rules:
         if target in GENERATORS:
             rules = _rules_for_target(manifest, target)
-            log(f"{AGENT_PATHS[target]['label']:15s} {len(rules)} rules")
+            summary_line(AGENT_PATHS[target]["label"], len(rules), "rules")
             GENERATORS[target](manifest, args)
             rule_count += 1
 
-    print("\nSyncing skills...")
+    section_header("Skills")
     skill_count = 0
     for target in active_skills:
         skills_dir = AGENT_PATHS.get(target, {}).get("skills_dir")
         if skills_dir:
             n = len(list(SKILLS_DIR.iterdir())) if SKILLS_DIR.exists() else 0
-            log(f"{AGENT_PATHS[target]['label']:15s} {n} symlinks in {skills_dir}")
-            # Skills are synced inside generators, but antigravity is skills-only
+            summary_line(AGENT_PATHS[target]["label"], n, "symlinks")
             if target == "antigravity":
                 gen_antigravity(manifest, args)
             skill_count += 1
 
-    # Update last-synced timestamp
     if not args.dry_run:
         manifest["updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         MANIFEST_PATH.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
 
-    print(f"\nDone. {rule_count} rule targets, {skill_count} skill targets synced.")
+    section_header("Summary")
+    dry = " (dry-run)" if args.dry_run else ""
+    print(f"  {rule_count} rule targets, {skill_count} skill targets synced.{dry}")
+    print()
 
 
 def cmd_add_rule(args: argparse.Namespace) -> None:
