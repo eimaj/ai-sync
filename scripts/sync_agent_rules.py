@@ -146,8 +146,21 @@ def confirm(prompt: str, default: bool = True) -> bool:
     return answer in ("y", "yes")
 
 
-def multi_select(prompt: str, options: list[tuple[str, str]], defaults: Optional[list[str]] = None) -> list[str]:
-    """Numbered multi-select. Returns list of selected IDs."""
+def multi_select(
+    prompt: str,
+    options: list[tuple[str, str]],
+    defaults: Optional[list[str]] = None,
+    auto_accept: bool = False,
+) -> list[str]:
+    """Numbered multi-select. Returns list of selected IDs.
+    If auto_accept is True, returns defaults without prompting."""
+    if auto_accept and defaults:
+        print(f"\n{prompt}")
+        for oid in defaults:
+            label = next((l for o, l in options if o == oid), oid)
+            print(f"  [auto] {label}")
+        return defaults
+
     print(f"\n{prompt}")
     for i, (oid, label) in enumerate(options, 1):
         marker = "*" if defaults and oid in defaults else " "
@@ -678,6 +691,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         "Step 1: Which agents do you currently have rules configured in?",
         source_options,
         defaults=detected,
+        auto_accept=args.yes,
     )
     if not sources:
         print("  No sources selected. Aborted.")
@@ -721,16 +735,18 @@ def cmd_init(args: argparse.Namespace) -> None:
         "Step 3a: Which agents do you want to sync RULES to?",
         rule_target_options,
         defaults=RULE_TARGETS,
+        auto_accept=args.yes,
     )
     skill_targets = multi_select(
         "Step 3b: Which agents do you want to sync SKILLS to?",
         skill_target_options,
         defaults=SKILL_TARGETS,
+        auto_accept=args.yes,
     )
 
     # Step 4: Prompt for AGENTS.md paths
     agents_md_paths: list[str] = []
-    if "agents-md" in rule_targets:
+    if "agents-md" in rule_targets and not args.yes:
         raw = input("\n  AGENTS.md output paths (comma-separated, e.g. ~/Code/AGENTS.md): ").strip()
         if raw:
             agents_md_paths = [p.strip() for p in raw.split(",") if p.strip()]
@@ -747,8 +763,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     for rule in all_rules:
         filename = f"{rule.id}.md"
         rule_path = RULES_DIR / filename
-        if not args.dry_run:
-            rule_path.write_text(rule.content + "\n")
+        rule_path.write_text(rule.content + "\n")
         log(f"Created rules/{filename}")
         entry: dict[str, Any] = {
             "id": rule.id,
@@ -780,7 +795,10 @@ def cmd_init(args: argparse.Namespace) -> None:
             "preamble": "These rules apply across this workspace unless explicitly overridden.",
         },
     }
-    write_manifest(manifest, args)
+    # Always write canonical manifest (internal state, not agent output)
+    manifest["updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    log(f"Wrote {MANIFEST_PATH}")
 
     # Step 6: First sync
     print("\nStep 5: Running first sync...\n")
@@ -852,11 +870,13 @@ def cmd_reconfigure(args: argparse.Namespace) -> None:
         "Select rule targets:",
         rule_target_options,
         defaults=manifest["active_targets"]["rules"],
+        auto_accept=args.yes,
     )
     manifest["active_targets"]["skills"] = multi_select(
         "Select skill targets:",
         skill_target_options,
         defaults=manifest["active_targets"]["skills"],
+        auto_accept=args.yes,
     )
 
     write_manifest(manifest, args)
