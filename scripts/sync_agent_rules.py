@@ -1145,87 +1145,88 @@ def cmd_set(args: argparse.Namespace) -> None:
     print(f"  Set {key} = {manifest[section][field]}")
 
 
-def _clean_skill_symlinks(target_dir: Path, args: argparse.Namespace) -> int:
-    """Remove symlinks pointing into ~/.ai-agent/skills/. Returns count."""
-    if not target_dir.exists():
-        return 0
-    count = 0
-    for entry in target_dir.iterdir():
-        if not entry.is_symlink():
-            continue
-        try:
-            resolved = Path(os.readlink(entry)).resolve()
-        except OSError:
-            continue
-        if str(resolved).startswith(str(SKILLS_DIR)):
-            remove_file(entry, args)
-            count += 1
-    return count
-
-
-def cmd_clean(args: argparse.Namespace) -> None:
-    manifest = read_manifest()
-    active_rules = manifest["active_targets"]["rules"]
-    active_skills = manifest["active_targets"]["skills"]
-
-    if not args.yes:
-        print("\nThis will remove all generated rule files and skill symlinks")
-        print("from your agent config directories. Your canonical source in")
-        print("~/.ai-agent/ is not affected.\n")
-        if not confirm("Proceed?"):
-            print("  Aborted.")
-            return
-
-    total_rules = 0
-    total_skills = 0
-
-    section_header("Cleaning rules")
-
-    for target in active_rules:
+def _find_generated_rules(manifest: dict) -> list[Path]:
+    """Scan active targets and return paths to generated rule files."""
+    found: list[Path] = []
+    for target in manifest["active_targets"]["rules"]:
         info = AGENT_PATHS.get(target, {})
-        count = 0
 
         if target == "cursor":
             rules_dir = info.get("rules_dir")
             if rules_dir and rules_dir.exists():
-                for f in rules_dir.glob("*.mdc"):
+                for f in sorted(rules_dir.glob("*.mdc")):
                     text = f.read_text()
                     _, body = parse_frontmatter(text)
                     if is_generated_file(body):
-                        remove_file(f, args)
-                        count += 1
+                        found.append(f)
 
         elif target == "agents-md":
             raw_paths = manifest.get("agents_md", {}).get("paths", [])
-            targets = _expand_agents_md_paths(raw_paths)
-            for t in targets:
+            for t in _expand_agents_md_paths(raw_paths):
                 if t.exists() and is_generated_file(t.read_text()):
-                    remove_file(t, args)
-                    count += 1
+                    found.append(t)
 
         else:
             rules_file = info.get("rules_file")
             if rules_file and rules_file.exists():
                 if is_generated_file(rules_file.read_text()):
-                    remove_file(rules_file, args)
-                    count += 1
+                    found.append(rules_file)
 
-        summary_line(info.get("label", target), count, "removed")
-        total_rules += count
+    return found
 
-    section_header("Cleaning skill symlinks")
 
-    for target in active_skills:
+def _find_skill_symlinks(manifest: dict) -> list[Path]:
+    """Scan active skill targets and return symlinks pointing into canonical skills."""
+    found: list[Path] = []
+    for target in manifest["active_targets"]["skills"]:
         skills_dir = AGENT_PATHS.get(target, {}).get("skills_dir")
-        if not skills_dir:
+        if not skills_dir or not skills_dir.exists():
             continue
-        count = _clean_skill_symlinks(skills_dir, args)
-        summary_line(AGENT_PATHS[target]["label"], count, "removed")
-        total_skills += count
+        for entry in sorted(skills_dir.iterdir()):
+            if not entry.is_symlink():
+                continue
+            try:
+                resolved = Path(os.readlink(entry)).resolve()
+            except OSError:
+                continue
+            if str(resolved).startswith(str(SKILLS_DIR)):
+                found.append(entry)
+    return found
+
+
+def cmd_clean(args: argparse.Namespace) -> None:
+    manifest = read_manifest()
+
+    rule_files = _find_generated_rules(manifest)
+    skill_links = _find_skill_symlinks(manifest)
+
+    if not rule_files and not skill_links:
+        print("\n  Nothing to clean -- no generated files or skill symlinks found.")
+        return
+
+    section_header(f"Generated rule files ({len(rule_files)})")
+    for f in rule_files:
+        print(f"  {f}")
+
+    section_header(f"Skill symlinks ({len(skill_links)})")
+    for s in skill_links:
+        print(f"  {s}")
+
+    print(f"\n  Total: {len(rule_files)} rule files, {len(skill_links)} skill symlinks")
+    print("  Your canonical source in ~/.ai-agent/ is not affected.\n")
+
+    if not args.yes and not confirm("  Remove all listed files?"):
+        print("  Aborted.")
+        return
+
+    for f in rule_files:
+        remove_file(f, args)
+    for s in skill_links:
+        remove_file(s, args)
 
     section_header("Summary")
     dry = " (dry-run)" if args.dry_run else ""
-    print(f"  {total_rules} rule files, {total_skills} skill symlinks removed.{dry}")
+    print(f"  {len(rule_files)} rule files, {len(skill_links)} skill symlinks removed.{dry}")
     print()
 
 
