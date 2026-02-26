@@ -8,3 +8,6 @@ docs/
 # Python
 __pycache__/
 *.pyc
+
+# Test artifacts
+.pytest_cache/
