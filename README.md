@@ -116,6 +116,7 @@ The script is version-controlled. Your personal rules, skills, and config stay l
 | `add-rule` | Create rule file + manifest entry + sync |
 | `remove-rule` | Delete rule file + manifest entry + sync |
 | `set` | Update manifest fields (e.g. `agents_md.paths`) |
+| `clean` | Remove all generated files and skill symlinks |
 | `reconfigure` | Change which agents to sync to |
 
 ## How It Works
@@ -140,6 +141,22 @@ All generated files include a header so the tool can detect and skip them during
 | `--verbose` | Detailed logging |
 | `--only <agent>` | Sync a single agent |
 | `--yes` | Accept defaults, skip prompts |
+
+## Reverting / Uninstalling
+
+To remove everything the sync tool has written to your agent configs:
+
+```bash
+sync_agent_rules.py clean
+```
+
+This scans each active target, deletes generated rule files (identified by their header), and removes skill symlinks pointing to `~/.ai-agent/skills/`. Your canonical source in `~/.ai-agent/` is not touched.
+
+Preview first with `--dry-run`:
+
+```bash
+sync_agent_rules.py --dry-run clean
+```
 
 ## Verify It Worked
 
