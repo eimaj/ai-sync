@@ -31,6 +31,7 @@ AGENT_DIR = Path.home() / ".ai-agent"
 MANIFEST_PATH = AGENT_DIR / "manifest.json"
 RULES_DIR = AGENT_DIR / "rules"
 SKILLS_DIR = AGENT_DIR / "skills"
+BACKUPS_DIR = AGENT_DIR / "backups"
 
 GENERATED_HEADER = "# Generated from ~/.ai-agent/ -- do not edit directly"
 GENERATED_HEADER_TEMPLATE = (
@@ -91,6 +92,104 @@ SETTABLE_KEYS: dict[str, tuple[str, str, str]] = {
     "agents_md.header": ("agents_md", "header", "scalar"),
     "agents_md.preamble": ("agents_md", "preamble", "scalar"),
 }
+
+# ---------------------------------------------------------------------------
+# Backup system
+# ---------------------------------------------------------------------------
+
+_current_backup: Optional[Path] = None
+
+
+def init_backup(command: str) -> Path:
+    """Create a timestamped backup directory for this session."""
+    global _current_backup
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    backup_dir = BACKUPS_DIR / ts
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    _current_backup = backup_dir
+    meta = {"created": ts, "command": command}
+    (backup_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+    return backup_dir
+
+
+def _backup_dest(original: Path) -> Optional[Path]:
+    """Map an absolute path to its location inside the current backup."""
+    if _current_backup is None:
+        return None
+    try:
+        rel = original.relative_to(Path.home())
+    except ValueError:
+        rel = Path(str(original).lstrip("/"))
+    return _current_backup / "files" / rel
+
+
+def backup_file(path: Path, args: argparse.Namespace) -> None:
+    """Copy a file to the current backup directory before it is modified."""
+    if not path.exists() or path.is_symlink():
+        return
+    dest = _backup_dest(path)
+    if dest is None:
+        return
+    if args.dry_run:
+        log_verbose(f"[dry-run] Would backup {path}", args)
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(path, dest)
+    log_verbose(f"Backed up {path}", args)
+
+
+def backup_directory(path: Path, args: argparse.Namespace) -> None:
+    """Copy a directory tree to the current backup directory."""
+    if not path.exists() or not path.is_dir():
+        return
+    dest = _backup_dest(path)
+    if dest is None:
+        return
+    if args.dry_run:
+        log_verbose(f"[dry-run] Would backup dir {path}", args)
+        return
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(path, dest, symlinks=False)
+    log_verbose(f"Backed up dir {path}", args)
+
+
+def latest_backup() -> Optional[Path]:
+    """Return the most recent backup directory, or None."""
+    if not BACKUPS_DIR.exists():
+        return None
+    dirs = sorted(
+        (d for d in BACKUPS_DIR.iterdir() if d.is_dir() and (d / "meta.json").exists()),
+        reverse=True,
+    )
+    return dirs[0] if dirs else None
+
+
+def restore_from_backup(backup_dir: Path, targets: list[Path],
+                        args: argparse.Namespace) -> int:
+    """Restore backed-up files to their original locations. Returns count."""
+    files_root = backup_dir / "files"
+    if not files_root.exists():
+        return 0
+    target_set = {str(t) for t in targets}
+    count = 0
+    for backed_up in files_root.rglob("*"):
+        if not backed_up.is_file():
+            continue
+        rel = backed_up.relative_to(files_root)
+        original = Path.home() / rel
+        if str(original) not in target_set:
+            continue
+        if args.dry_run:
+            log_verbose(f"[dry-run] Would restore {original}", args)
+            count += 1
+            continue
+        original.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(backed_up, original)
+        log_verbose(f"Restored {original}", args)
+        count += 1
+    return count
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -317,6 +416,8 @@ def write_file(path: Path, content: str, args: argparse.Namespace) -> None:
         else:
             log_verbose(f"{path} (unchanged)", args)
             return
+    if path.exists():
+        backup_file(path, args)
     path.write_text(content)
     log_verbose(f"Wrote {path}", args)
 
@@ -325,6 +426,8 @@ def remove_file(path: Path, args: argparse.Namespace) -> None:
     if args.dry_run:
         log_verbose(f"[dry-run] Would remove {path}", args)
         return
+    if path.exists() and not path.is_symlink():
+        backup_file(path, args)
     path.unlink(missing_ok=True)
     log_verbose(f"Removed {path}", args)
 
@@ -973,8 +1076,10 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     section_header("Writing canonical source")
 
-    # Clean existing canonical dirs
+    init_backup("init")
+
     if RULES_DIR.exists():
+        backup_directory(RULES_DIR, args)
         shutil.rmtree(RULES_DIR)
     RULES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1027,6 +1132,9 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
     if manifest is None:
         manifest = read_manifest()
 
+    if _current_backup is None:
+        init_backup("sync")
+
     active_rules = manifest["active_targets"]["rules"]
     active_skills = manifest["active_targets"]["skills"]
 
@@ -1068,6 +1176,7 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
 
 
 def cmd_add_rule(args: argparse.Namespace) -> None:
+    init_backup("add-rule")
     manifest = read_manifest()
     rule_id = args.id
     rule_file = f"{rule_id}.md"
@@ -1116,7 +1225,10 @@ def cmd_remove_rule(args: argparse.Namespace) -> None:
         print(f"Error: rule '{rule_id}' not found in manifest")
         sys.exit(1)
 
+    init_backup("remove-rule")
+
     if rule_path.exists():
+        backup_file(rule_path, args)
         rule_path.unlink()
         log(f"Removed rules/{rule_id}.md")
 
@@ -1199,6 +1311,18 @@ def cmd_clean(args: argparse.Namespace) -> None:
 
     rule_files = _find_generated_rules(manifest)
     skill_links = _find_skill_symlinks(manifest)
+    backup = latest_backup()
+
+    restorable: list[Path] = []
+    if backup:
+        files_root = backup / "files"
+        if files_root.exists():
+            for backed_up in files_root.rglob("*"):
+                if backed_up.is_file() and backed_up.name != "meta.json":
+                    rel = backed_up.relative_to(files_root)
+                    original = Path.home() / rel
+                    if original in rule_files or original in skill_links:
+                        restorable.append(original)
 
     if not rule_files and not skill_links:
         print("\n  Nothing to clean -- no generated files or skill symlinks found.")
@@ -1206,27 +1330,47 @@ def cmd_clean(args: argparse.Namespace) -> None:
 
     section_header(f"Generated rule files ({len(rule_files)})")
     for f in rule_files:
-        print(f"  {f}")
+        has_backup = f in restorable
+        tag = " <- will restore from backup" if has_backup else ""
+        print(f"  {f}{tag}")
 
     section_header(f"Skill symlinks ({len(skill_links)})")
     for s in skill_links:
         print(f"  {s}")
 
-    print(f"\n  Total: {len(rule_files)} rule files, {len(skill_links)} skill symlinks")
+    print(f"\n  Total: {len(rule_files)} generated, {len(skill_links)} symlinks")
+    if restorable:
+        print(f"  {len(restorable)} files will be restored from backup ({backup.name})")
     print("  Your canonical source in ~/.ai-agent/ is not affected.\n")
 
-    if not args.yes and not confirm("  Remove all listed files?"):
+    if not args.yes and not confirm("  Proceed?"):
         print("  Aborted.")
         return
 
     for f in rule_files:
-        remove_file(f, args)
+        if args.dry_run:
+            log_verbose(f"[dry-run] Would remove {f}", args)
+        else:
+            f.unlink(missing_ok=True)
+            log_verbose(f"Removed {f}", args)
+
     for s in skill_links:
-        remove_file(s, args)
+        if args.dry_run:
+            log_verbose(f"[dry-run] Would remove symlink {s}", args)
+        else:
+            s.unlink(missing_ok=True)
+            log_verbose(f"Removed symlink {s}", args)
+
+    restored = 0
+    if backup and restorable:
+        restored = restore_from_backup(backup, restorable, args)
 
     section_header("Summary")
     dry = " (dry-run)" if args.dry_run else ""
-    print(f"  {len(rule_files)} rule files, {len(skill_links)} skill symlinks removed.{dry}")
+    print(f"  {len(rule_files)} generated removed, {len(skill_links)} symlinks removed")
+    if restored:
+        print(f"  {restored} files restored from backup")
+    print(f"  {dry}" if dry else "")
     print()
 
 

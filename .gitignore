@@ -2,6 +2,7 @@
 manifest.json
 rules/
 skills/
+backups/
 docs/
 
 # Python
