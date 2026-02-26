@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🧪 Running test suite before push..."
+
+cd "$(git rev-parse --show-toplevel)"
+
+if ! python3 -m pytest tests/ -q; then
+    echo ""
+    echo "❌ Tests failed. Push aborted."
+    echo "   Fix the failures and try again."
+    exit 1
+fi
+
+echo "✅ All tests passed."
