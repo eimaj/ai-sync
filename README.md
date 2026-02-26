@@ -18,6 +18,17 @@ Edit rules once in `~/.ai-agent/rules/`, run `sync`, and every agent gets update
 | Antigravity | -- | Symlinks |
 | AGENTS.md | Condensed numbered list | -- |
 
+## Prerequisites
+
+Python 3.8+ is required. Check with `python3 --version`. If not installed:
+
+- **macOS**: `brew install python3` or `xcode-select --install` (includes Python)
+- **Ubuntu/Debian**: `sudo apt install python3`
+- **Fedora**: `sudo dnf install python3`
+- **Windows**: Download from [python.org](https://www.python.org/downloads/) or `winget install Python.Python.3`
+
+No pip, no venv, no package manager needed -- the script uses only the Python standard library.
+
 ## Install
 
 ```bash
@@ -25,44 +36,42 @@ git clone <repo-url> ~/.ai-agent
 ~/.ai-agent/scripts/sync_agent_rules.py init
 ```
 
-No pip, no venv, no package manager. Requires Python 3.8+.
-
 ## Usage
 
 ```bash
 # First-time setup: import existing rules and select targets
-sync_agent_rules.py init
+~/.ai-agent/scripts/sync_agent_rules.py init
 
 # Regenerate all agent configs from canonical source
-sync_agent_rules.py sync
+~/.ai-agent/scripts/sync_agent_rules.py sync
 
 # Show current configuration and sync state
-sync_agent_rules.py status
+~/.ai-agent/scripts/sync_agent_rules.py status
 
 # Add a rule (creates file + manifest entry + syncs)
-sync_agent_rules.py add-rule my-rule --description "My new rule"
+~/.ai-agent/scripts/sync_agent_rules.py add-rule my-rule --description "My new rule"
 
 # Add a rule from an existing file
-sync_agent_rules.py add-rule my-rule --file ~/drafts/rule.md
+~/.ai-agent/scripts/sync_agent_rules.py add-rule my-rule --file ~/drafts/rule.md
 
 # Remove a rule (deletes file + manifest entry + syncs)
-sync_agent_rules.py remove-rule my-rule
+~/.ai-agent/scripts/sync_agent_rules.py remove-rule my-rule
 
 # Update manifest fields from the CLI
-sync_agent_rules.py set agents_md.paths "~/Code/**/AGENTS.md"
-sync_agent_rules.py set agents_md.header "# My AGENTS Rules"
+~/.ai-agent/scripts/sync_agent_rules.py set agents_md.paths "~/Code/**/AGENTS.md"
+~/.ai-agent/scripts/sync_agent_rules.py set agents_md.header "# My AGENTS Rules"
 
 # Change which agents to sync to
-sync_agent_rules.py reconfigure
+~/.ai-agent/scripts/sync_agent_rules.py reconfigure
 
 # Preview changes without writing
-sync_agent_rules.py sync --dry-run
+~/.ai-agent/scripts/sync_agent_rules.py --dry-run sync
 
 # Show diffs against current files
-sync_agent_rules.py sync --diff
+~/.ai-agent/scripts/sync_agent_rules.py --diff sync
 
 # Sync a single agent
-sync_agent_rules.py sync --only cursor
+~/.ai-agent/scripts/sync_agent_rules.py --only cursor sync
 ```
 
 ## Managing Rules
@@ -70,7 +79,7 @@ sync_agent_rules.py sync --only cursor
 Add a rule in one step:
 
 ```bash
-sync_agent_rules.py add-rule commit-strategy --description "Commit early and often"
+~/.ai-agent/scripts/sync_agent_rules.py add-rule commit-strategy --description "Commit early and often"
 ```
 
 This creates `rules/commit-strategy.md`, adds it to `manifest.json`, and runs sync.
@@ -78,13 +87,13 @@ This creates `rules/commit-strategy.md`, adds it to `manifest.json`, and runs sy
 Remove just as easily:
 
 ```bash
-sync_agent_rules.py remove-rule commit-strategy
+~/.ai-agent/scripts/sync_agent_rules.py remove-rule commit-strategy
 ```
 
 For advanced Cursor metadata, use flags:
 
 ```bash
-sync_agent_rules.py add-rule my-rule \
+~/.ai-agent/scripts/sync_agent_rules.py add-rule my-rule \
   --description "Short description" \
   --no-always-apply \
   --exclude "kiro,gemini"
@@ -147,15 +156,15 @@ All generated files include a header so the tool can detect and skip them during
 To remove everything the sync tool has written to your agent configs:
 
 ```bash
-sync_agent_rules.py clean
+~/.ai-agent/scripts/sync_agent_rules.py clean
 ```
 
-This scans each active target, deletes generated rule files (identified by their header), and removes skill symlinks pointing to `~/.ai-agent/skills/`. Your canonical source in `~/.ai-agent/` is not touched.
+This scans each active target, lists what it will remove, and asks for confirmation. It deletes generated rule files (identified by their header) and removes skill symlinks pointing to `~/.ai-agent/skills/`. Your canonical source in `~/.ai-agent/` is not touched.
 
 Preview first with `--dry-run`:
 
 ```bash
-sync_agent_rules.py --dry-run clean
+~/.ai-agent/scripts/sync_agent_rules.py --dry-run clean
 ```
 
 ## Verify It Worked
@@ -168,6 +177,10 @@ You should see the same rules across every agent you synced to.
 
 ## Shell Alias
 
+Add to your `~/.zshrc` or `~/.bashrc` to skip the full path:
+
 ```bash
 alias sync-ai-rules='~/.ai-agent/scripts/sync_agent_rules.py'
 ```
+
+Then use `sync-ai-rules sync`, `sync-ai-rules status`, etc.
