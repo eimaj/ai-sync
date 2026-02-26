@@ -208,6 +208,25 @@ sync-ai-rules --dry-run clean
 
 Files marked `<- will restore from backup` in the preview will be restored to their pre-sync state.
 
+## 🧪 Testing
+
+Install dev dependencies and run the suite:
+
+```bash
+pip install -r requirements-dev.txt
+python3 -m pytest tests/ -v
+```
+
+Tests run in isolated temp directories -- they never touch your real agent configs.
+
+### Pre-push hook
+
+A git hook runs the full test suite before every push. To enable it after cloning:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## ✅ Verify It Worked
 
 After running `init`, paste this into any of your AI coding agents:
