@@ -141,6 +141,33 @@ The script is version-controlled. Your personal rules, skills, and config stay l
 
 All generated files include a header so the tool can detect and skip them during re-import.
 
+## AGENTS.md Paths
+
+`AGENTS.md` is a cross-tool standard for embedding rules directly in a repository. Some tools read it automatically:
+
+| Tool | Reads AGENTS.md |
+|------|----------------|
+| Codex | Yes -- scans workspace for `AGENTS.md` files |
+| Cursor | Yes -- reads `AGENTS.md` in workspace root and subdirectories |
+| Claude Code | No -- uses `CLAUDE.md` instead |
+| Gemini CLI | No -- uses `GEMINI.md` instead |
+| Kiro | No -- uses `steering/` directory |
+
+Place `AGENTS.md` files at the root of your workspaces so Codex and Cursor pick them up. Configure paths during `init`, or set them anytime:
+
+```bash
+# Single path
+~/.ai-agent/scripts/sync_agent_rules.py set agents_md.paths "~/Code/my-project/AGENTS.md"
+
+# Multiple paths
+~/.ai-agent/scripts/sync_agent_rules.py set agents_md.paths "~/Code/project-a/AGENTS.md,~/Code/project-b/AGENTS.md"
+
+# Wildcard -- writes to every existing AGENTS.md under ~/Code/
+~/.ai-agent/scripts/sync_agent_rules.py set agents_md.paths "~/Code/**/AGENTS.md"
+```
+
+Wildcards use Python's `glob` and expand at sync time. A pattern like `~/Code/**/AGENTS.md` finds all existing `AGENTS.md` files recursively under `~/Code/`. If a path points to a directory instead of a file, `/AGENTS.md` is appended automatically. Non-glob paths that don't exist yet are created on sync.
+
 ## Flags
 
 | Flag | Effect |
