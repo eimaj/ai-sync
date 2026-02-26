@@ -1,5 +1,10 @@
 # 🔄 ai-agent
 
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue)
+![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
+![Tests](https://img.shields.io/badge/tests-63%20passed-brightgreen)
+
 > ⚠️ **Disclaimer:** This project was written with AI. Review before running -- it writes to agent config directories (`~/.cursor/`, `~/.codex/`, `~/.claude/`, etc.).
 
 Sync AI coding assistant rules and skills from a single canonical source to multiple agents.
