@@ -78,6 +78,12 @@ SKILL_TARGETS = [k for k, v in AGENT_PATHS.items() if "skills_dir" in v]
 SKIP_SKILL_DIRS = {".system", "cursor-migration-map"}
 SKIP_SKILL_PREFIXES = ("pattern-",)
 
+SETTABLE_KEYS: dict[str, tuple[str, str, str]] = {
+    "agents_md.paths": ("agents_md", "paths", "array"),
+    "agents_md.header": ("agents_md", "header", "scalar"),
+    "agents_md.preamble": ("agents_md", "preamble", "scalar"),
+}
+
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -1020,6 +1026,25 @@ def cmd_remove_rule(args: argparse.Namespace) -> None:
     write_manifest(manifest, args)
     print()
     cmd_sync(args, manifest=manifest)
+
+
+def cmd_set(args: argparse.Namespace) -> None:
+    manifest = read_manifest()
+    key = args.key
+
+    if key not in SETTABLE_KEYS:
+        supported = ", ".join(sorted(SETTABLE_KEYS))
+        print(f"Error: unsupported key '{key}'. Supported: {supported}")
+        sys.exit(1)
+
+    section, field, kind = SETTABLE_KEYS[key]
+    if kind == "array":
+        manifest[section][field] = [v.strip() for v in args.value.split(",") if v.strip()]
+    else:
+        manifest[section][field] = args.value
+
+    write_manifest(manifest, args)
+    print(f"  Set {key} = {manifest[section][field]}")
 
 
 def cmd_reconfigure(args: argparse.Namespace) -> None:
