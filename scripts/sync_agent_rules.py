@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import glob as globmod
 import json
 import os
 import re
@@ -585,12 +586,33 @@ def gen_antigravity(manifest: dict, args: argparse.Namespace) -> None:
         sync_skills(AGENT_PATHS["antigravity"]["skills_dir"], args)
 
 
+def _expand_agents_md_paths(paths: list[str]) -> list[Path]:
+    """Expand glob patterns in AGENTS.md path list."""
+    result: list[Path] = []
+    for p in paths:
+        expanded = os.path.expanduser(p)
+        if any(c in expanded for c in ("*", "?", "[")):
+            matches = sorted(globmod.glob(expanded, recursive=True))
+            if not matches:
+                log(f"  Warning: glob '{p}' matched no files")
+            for m in matches:
+                result.append(Path(m))
+        else:
+            result.append(Path(expanded))
+    return result
+
+
 def gen_agents_md(manifest: dict, args: argparse.Namespace) -> None:
     agents_md_config = manifest.get("agents_md", {})
-    paths = agents_md_config.get("paths", [])
-    if not paths:
+    raw_paths = agents_md_config.get("paths", [])
+    if not raw_paths:
         log("  AGENTS.md: no paths configured, skipping")
         return
+
+    targets = _expand_agents_md_paths(raw_paths)
+    if not targets:
+        return
+
     header = agents_md_config.get("header", "# AGENTS Rules")
     preamble = agents_md_config.get("preamble", "")
     rules = _rules_for_target(manifest, "agents-md")
@@ -605,8 +627,7 @@ def gen_agents_md(manifest: dict, args: argparse.Namespace) -> None:
     lines.append("")
 
     content = "\n".join(lines)
-    for p in paths:
-        target = Path(p).expanduser()
+    for target in targets:
         write_file(target, content, args)
 
 
