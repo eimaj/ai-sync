@@ -1,0 +1,9 @@
+# Personal content -- never committed
+manifest.json
+rules/
+skills/
+docs/
+
+# Python
+__pycache__/
+*.pyc
