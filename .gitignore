@@ -2,12 +2,16 @@
 manifest.json
 rules/
 skills/
+skills-archived/
 backups/
 docs/
 
 # Python
 __pycache__/
 *.pyc
+
+# MCP server venv (user installs locally)
+mcp/.venv/
 
 # Test artifacts
 .pytest_cache/
