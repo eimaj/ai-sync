@@ -148,15 +148,26 @@ def sync_reconfigure(
     rule_targets: list[str],
     skill_targets: list[str],
 ) -> dict[str, Any]:
-    """Change which agents receive rule syncs and skill symlinks, then re-sync.
+    """Change which agents receive rule syncs and skill delivery, then re-sync.
+
+    Preserves existing per-target sync_mode and conflict_strategy settings.
+    New targets default to symlink mode with overwrite strategy.
 
     Args:
         rule_targets: Agent IDs for rule sync (e.g. ["cursor", "codex", "claude"]).
-        skill_targets: Agent IDs for skill symlinks (e.g. ["cursor", "codex"]).
+        skill_targets: Agent IDs for skill delivery (e.g. ["cursor", "codex"]).
     """
     manifest = sync.read_manifest()
     manifest["active_targets"]["rules"] = rule_targets
-    manifest["active_targets"]["skills"] = skill_targets
+    old_skills = {t["name"]: t for t in manifest["active_targets"]["skills"]}
+    new_skills = []
+    for name in skill_targets:
+        if name in old_skills:
+            new_skills.append(old_skills[name])
+        else:
+            new_skills.append({"name": name, "sync_mode": "symlink",
+                               "conflict_strategy": "overwrite"})
+    manifest["active_targets"]["skills"] = new_skills
     args = _mock_args()
     sync.write_manifest(manifest, args)
     return _run_cmd(sync.cmd_sync, args)
