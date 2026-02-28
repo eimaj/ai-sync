@@ -15,7 +15,7 @@ Edit rules once in `~/.ai-agent/rules/`, run `sync`, and every agent gets update
 
 - [🤖 Supported Agents](#-supported-agents)
 - [🚀 Quick Start](#-quick-start)
-- [🛡️ Nothing Is Destructive](#️-nothing-is-destructive)
+- [🛡️ Safety & Backups](#️-safety--backups)
 - [📖 Commands](#-commands)
 - [📋 AGENTS.md Paths](#-agentsmd-paths)
 - [⚡ How It Works](#-how-it-works)
@@ -73,13 +73,20 @@ All examples below use this alias.
 
 ---
 
-## 🛡️ Nothing Is Destructive
+## 🛡️ Safety & Backups
 
-This tool **never permanently deletes your files**. Every time `init` or `sync` overwrites a file in your agent config directories, the original is copied to a timestamped backup first. The same applies when `remove-rule` deletes a canonical rule file.
-
-Backups are stored at `~/.ai-agent/backups/<timestamp>/files/`, mirroring the original path relative to your home directory.
+By default, every time `init` or `sync` overwrites a file in your agent config directories, the original is copied to a timestamped backup first. The same applies when `remove-rule` deletes a canonical rule file. Backups are stored at `~/.ai-agent/backups/<timestamp>/files/`, mirroring the original path relative to your home directory.
 
 Use `--verbose` with any command to see each backup as it happens.
+
+**Conflict strategy matters.** When syncing skills and a non-managed directory already exists at the target:
+
+| `conflict_strategy` | Behavior |
+|---------------------|----------|
+| `archive` | Moves the existing directory to `~/.ai-agent/skills-archived/` before writing — nothing is lost |
+| `overwrite` (default) | Backs up and replaces the existing directory — recoverable from `~/.ai-agent/backups/` |
+
+Content already managed by sync (symlinks or copies with `.sync-meta`) is always replaced silently regardless of strategy.
 
 ---
 
