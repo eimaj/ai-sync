@@ -117,8 +117,9 @@ AGENT_PATHS: dict[str, dict[str, Any]] = {
 RULE_TARGETS = [k for k in AGENT_PATHS if k != "antigravity"]
 SKILL_TARGETS = [k for k, v in AGENT_PATHS.items() if "skills_dir" in v]
 
-SKIP_SKILL_DIRS = {".system", "cursor-migration-map"}
-SKIP_SKILL_PREFIXES = ("pattern-",)
+SKIP_SKILL_DIRS: set[str] = set()
+SKIP_SKILL_PREFIXES: tuple[str, ...] = ()
+SKILLS_ARCHIVED_DIR = AGENT_DIR / "skills-archived"
 
 SETTABLE_KEYS: dict[str, tuple[str, str, str]] = {
     "agents_md.paths": ("agents_md", "paths", "array"),
@@ -393,6 +394,39 @@ def build_parser() -> argparse.ArgumentParser:
                            ))
     set_p.add_argument("key", help="dotted key path (e.g. agents_md.paths)")
     set_p.add_argument("value", help="new value (array fields are comma-separated)")
+
+    archive_p = sub.add_parser("archive-skill", formatter_class=F,
+                               help="move skills out of active sync",
+                               description=(
+                                   "Move skill directories from ~/.ai-agent/skills/\n"
+                                   "to ~/.ai-agent/skills-archived/ and re-sync.\n"
+                                   "Archived skills are preserved but no longer\n"
+                                   "symlinked to any agent."
+                               ),
+                               epilog=(
+                                   "examples:\n"
+                                   "  sync-ai-rules archive-skill my-skill\n"
+                                   "  sync-ai-rules archive-skill skill-a skill-b\n"
+                                   "  sync-ai-rules archive-skill --list\n"
+                               ))
+    archive_p.add_argument("names", nargs="*", help="skill names to archive")
+    archive_p.add_argument("--list", action="store_true", dest="list_archived",
+                           help="list currently archived skills and exit")
+
+    restore_p = sub.add_parser("restore-skill", formatter_class=F,
+                               help="restore archived skills to active sync",
+                               description=(
+                                   "Move skill directories from ~/.ai-agent/skills-archived/\n"
+                                   "back to ~/.ai-agent/skills/ and re-sync.\n"
+                                   "Restored skills will be symlinked to all active\n"
+                                   "skill targets."
+                               ),
+                               epilog=(
+                                   "examples:\n"
+                                   "  sync-ai-rules restore-skill my-skill\n"
+                                   "  sync-ai-rules restore-skill skill-a skill-b\n"
+                               ))
+    restore_p.add_argument("names", nargs="+", help="skill names to restore")
 
     return parser
 
@@ -1087,6 +1121,13 @@ def cmd_status(args: argparse.Namespace) -> None:
     else:
         print(f"  {C.DIM}(none){C.RESET}")
 
+    archived = _list_archived()
+    if archived:
+        section_header(f"Archived Skills ({len(archived)})")
+        for i in range(0, len(archived), 4):
+            chunk = archived[i:i + 4]
+            print(f"  {'  '.join(f'{n:20s}' for n in chunk)}")
+
     agents_md = manifest.get("agents_md", {})
     paths = agents_md.get("paths", [])
     section_header("AGENTS.md Paths")
@@ -1527,6 +1568,92 @@ def cmd_clean(args: argparse.Namespace) -> None:
     print()
 
 
+def _list_archived() -> list[str]:
+    if not SKILLS_ARCHIVED_DIR.exists():
+        return []
+    return sorted(d.name for d in SKILLS_ARCHIVED_DIR.iterdir() if d.is_dir())
+
+
+def cmd_archive_skill(args: argparse.Namespace) -> None:
+    if args.list_archived:
+        archived = _list_archived()
+        section_header(f"Archived Skills ({len(archived)})")
+        if archived:
+            for name in archived:
+                print(f"  {name}")
+        else:
+            print(f"  {C.DIM}(none){C.RESET}")
+        print()
+        return
+
+    if not args.names:
+        print(f"  {C.BOLD_RED}Error:{C.RESET} provide at least one skill name, or use --list")
+        sys.exit(1)
+
+    errors = []
+    for name in args.names:
+        src = SKILLS_DIR / name
+        if not src.exists() or not src.is_dir():
+            errors.append(f"skill '{name}' not found in {SKILLS_DIR}")
+            continue
+        dest = SKILLS_ARCHIVED_DIR / name
+        if dest.exists():
+            errors.append(f"skill '{name}' already exists in archive")
+            continue
+
+    if errors:
+        for e in errors:
+            print(f"  {C.BOLD_RED}Error:{C.RESET} {e}")
+        sys.exit(1)
+
+    SKILLS_ARCHIVED_DIR.mkdir(parents=True, exist_ok=True)
+    section_header("Archiving Skills")
+    for name in args.names:
+        src = SKILLS_DIR / name
+        dest = SKILLS_ARCHIVED_DIR / name
+        if args.dry_run:
+            log(f"{C.MAGENTA}(dry-run){C.RESET} would move {src} -> {dest}")
+        else:
+            shutil.move(str(src), str(dest))
+            log(f"{C.GREEN}archived{C.RESET} {name}")
+
+    print()
+    if not args.dry_run:
+        cmd_sync(args)
+
+
+def cmd_restore_skill(args: argparse.Namespace) -> None:
+    errors = []
+    for name in args.names:
+        src = SKILLS_ARCHIVED_DIR / name
+        if not src.exists() or not src.is_dir():
+            errors.append(f"skill '{name}' not found in {SKILLS_ARCHIVED_DIR}")
+            continue
+        dest = SKILLS_DIR / name
+        if dest.exists():
+            errors.append(f"skill '{name}' already exists in {SKILLS_DIR}")
+            continue
+
+    if errors:
+        for e in errors:
+            print(f"  {C.BOLD_RED}Error:{C.RESET} {e}")
+        sys.exit(1)
+
+    section_header("Restoring Skills")
+    for name in args.names:
+        src = SKILLS_ARCHIVED_DIR / name
+        dest = SKILLS_DIR / name
+        if args.dry_run:
+            log(f"{C.MAGENTA}(dry-run){C.RESET} would move {src} -> {dest}")
+        else:
+            shutil.move(str(src), str(dest))
+            log(f"{C.GREEN}restored{C.RESET} {name}")
+
+    print()
+    if not args.dry_run:
+        cmd_sync(args)
+
+
 def cmd_reconfigure(args: argparse.Namespace) -> None:
     manifest = read_manifest()
 
@@ -1590,6 +1717,10 @@ def main() -> None:
         cmd_set(args)
     elif args.command == "clean":
         cmd_clean(args)
+    elif args.command == "archive-skill":
+        cmd_archive_skill(args)
+    elif args.command == "restore-skill":
+        cmd_restore_skill(args)
 
 
 if __name__ == "__main__":
