@@ -90,7 +90,8 @@ AGENT_PATHS: dict[str, dict[str, Any]] = {
     "claude": {
         "label": "Claude Code",
         "rules_file": Path.home() / ".claude" / "CLAUDE.md",
-        "description": "rules as CLAUDE.md",
+        "skills_dir": Path.home() / ".claude" / "skills",
+        "description": "rules as CLAUDE.md + skill symlinks",
     },
     "gemini": {
         "label": "Gemini CLI",
@@ -120,6 +121,9 @@ SKILL_TARGETS = [k for k, v in AGENT_PATHS.items() if "skills_dir" in v]
 SKIP_SKILL_DIRS: set[str] = set()
 SKIP_SKILL_PREFIXES: tuple[str, ...] = ()
 SKILLS_ARCHIVED_DIR = AGENT_DIR / "skills-archived"
+
+VALID_SYNC_MODES = ("symlink", "copy")
+VALID_CONFLICT_STRATEGIES = ("overwrite", "archive")
 
 SETTABLE_KEYS: dict[str, tuple[str, str, str]] = {
     "agents_md.paths": ("agents_md", "paths", "array"),
@@ -670,13 +674,67 @@ def read_manifest() -> dict[str, Any]:
     if not MANIFEST_PATH.exists():
         print(f"{C.BOLD_RED}Error:{C.RESET} {MANIFEST_PATH} not found. Run 'init' first.")
         sys.exit(1)
-    return json.loads(MANIFEST_PATH.read_text())
+    manifest = json.loads(MANIFEST_PATH.read_text())
+    _normalize_targets(manifest)
+    return manifest
 
 
 def write_manifest(data: dict[str, Any], args: argparse.Namespace) -> None:
     data["updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     content = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     write_file(MANIFEST_PATH, content, args)
+
+
+def _normalize_skill_target(entry: Any) -> dict[str, str]:
+    """Normalize a skill target entry (string or dict) to full object form."""
+    if isinstance(entry, str):
+        return {"name": entry, "sync_mode": "symlink", "conflict_strategy": "overwrite"}
+    if isinstance(entry, dict):
+        result = dict(entry)
+        if "name" not in result:
+            print(f"{C.BOLD_RED}Error:{C.RESET} skill target missing 'name': {entry}")
+            sys.exit(1)
+        result.setdefault("sync_mode", "symlink")
+        result.setdefault("conflict_strategy", "overwrite")
+        if result["sync_mode"] not in VALID_SYNC_MODES:
+            print(
+                f"{C.BOLD_RED}Error:{C.RESET} invalid sync_mode "
+                f"'{result['sync_mode']}' for target '{result['name']}'. "
+                f"Valid: {', '.join(VALID_SYNC_MODES)}"
+            )
+            sys.exit(1)
+        if result["conflict_strategy"] not in VALID_CONFLICT_STRATEGIES:
+            print(
+                f"{C.BOLD_RED}Error:{C.RESET} invalid conflict_strategy "
+                f"'{result['conflict_strategy']}' for target '{result['name']}'. "
+                f"Valid: {', '.join(VALID_CONFLICT_STRATEGIES)}"
+            )
+            sys.exit(1)
+        return result
+    print(f"{C.BOLD_RED}Error:{C.RESET} invalid skill target entry: {entry}")
+    sys.exit(1)
+
+
+def _normalize_targets(manifest: dict) -> None:
+    """Normalize active_targets in-place. Skills become objects; rules stay strings."""
+    active = manifest.get("active_targets", {})
+    active["skills"] = [_normalize_skill_target(e) for e in active.get("skills", [])]
+    active["rules"] = [
+        e["name"] if isinstance(e, dict) else e for e in active.get("rules", [])
+    ]
+
+
+def _skill_target_names(manifest: dict) -> list[str]:
+    """Extract target names from normalized skill target entries."""
+    return [t["name"] for t in manifest["active_targets"].get("skills", [])]
+
+
+def _get_skill_target_config(manifest: dict, target_name: str) -> dict[str, str]:
+    """Return the normalized config for a named skill target."""
+    for t in manifest["active_targets"].get("skills", []):
+        if t["name"] == target_name:
+            return t
+    return {"name": target_name, "sync_mode": "symlink", "conflict_strategy": "overwrite"}
 
 
 # ---------------------------------------------------------------------------
@@ -903,7 +961,8 @@ def gen_cursor(manifest: dict, args: argparse.Namespace) -> None:
                 remove_file(f, args)
 
     if "skills_dir" in AGENT_PATHS["cursor"]:
-        sync_skills(AGENT_PATHS["cursor"]["skills_dir"], args)
+        cfg = _get_skill_target_config(manifest, "cursor")
+        sync_skills(AGENT_PATHS["cursor"]["skills_dir"], args, target_config=cfg)
 
 
 def gen_codex(manifest: dict, args: argparse.Namespace) -> None:
@@ -917,17 +976,22 @@ def gen_codex(manifest: dict, args: argparse.Namespace) -> None:
     write_file(AGENT_PATHS["codex"]["rules_file"], "\n".join(parts), args)
 
     if "skills_dir" in AGENT_PATHS["codex"]:
-        sync_skills(AGENT_PATHS["codex"]["skills_dir"], args)
+        cfg = _get_skill_target_config(manifest, "codex")
+        sync_skills(AGENT_PATHS["codex"]["skills_dir"], args, target_config=cfg)
 
 
 def gen_claude(manifest: dict, args: argparse.Namespace) -> None:
     _gen_concat_file(manifest, "claude", args)
+    if "skills_dir" in AGENT_PATHS["claude"]:
+        cfg = _get_skill_target_config(manifest, "claude")
+        sync_skills(AGENT_PATHS["claude"]["skills_dir"], args, target_config=cfg)
 
 
 def gen_gemini(manifest: dict, args: argparse.Namespace) -> None:
     _gen_concat_file(manifest, "gemini", args)
     if "skills_dir" in AGENT_PATHS["gemini"]:
-        sync_skills(AGENT_PATHS["gemini"]["skills_dir"], args)
+        cfg = _get_skill_target_config(manifest, "gemini")
+        sync_skills(AGENT_PATHS["gemini"]["skills_dir"], args, target_config=cfg)
 
 
 def gen_kiro(manifest: dict, args: argparse.Namespace) -> None:
@@ -936,7 +1000,8 @@ def gen_kiro(manifest: dict, args: argparse.Namespace) -> None:
 
 def gen_antigravity(manifest: dict, args: argparse.Namespace) -> None:
     if "skills_dir" in AGENT_PATHS["antigravity"]:
-        sync_skills(AGENT_PATHS["antigravity"]["skills_dir"], args)
+        cfg = _get_skill_target_config(manifest, "antigravity")
+        sync_skills(AGENT_PATHS["antigravity"]["skills_dir"], args, target_config=cfg)
 
 
 def _expand_agents_md_paths(paths: list[str]) -> list[Path]:
@@ -1018,14 +1083,55 @@ def _rule_summary(rule: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def sync_skills(target_dir: Path, args: argparse.Namespace) -> None:
-    if not SKILLS_DIR.exists():
-        return
-    target_dir.mkdir(parents=True, exist_ok=True)
+def _is_managed_copy(path: Path) -> bool:
+    """Check if a directory is a sync-managed copy (has .sync-meta pointing to canonical)."""
+    meta_file = path / ".sync-meta"
+    if not meta_file.exists():
+        return False
+    try:
+        meta = json.loads(meta_file.read_text())
+        return meta.get("source", "").startswith(str(SKILLS_DIR))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def _write_sync_meta(dest: Path, source: Path) -> None:
+    """Write a .sync-meta marker inside a copied skill directory."""
+    meta = {
+        "source": str(source),
+        "synced_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "sync_mode": "copy",
+    }
+    (dest / ".sync-meta").write_text(json.dumps(meta, indent=2) + "\n")
+
+
+def _handle_conflict(entry: Path, target_name: str, conflict_strategy: str,
+                     args: argparse.Namespace) -> None:
+    """Handle a non-managed directory that conflicts with a canonical skill."""
+    if conflict_strategy == "archive":
+        archive_dest = SKILLS_ARCHIVED_DIR / f"{target_name}-{entry.name}"
+        if args.dry_run:
+            log(f"{C.MAGENTA}[dry-run]{C.RESET} Would archive {entry} -> {archive_dest}")
+            return
+        SKILLS_ARCHIVED_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(entry), str(archive_dest))
+        log(f"{C.BLUE}Archived{C.RESET} {entry.name} -> {archive_dest}")
+    else:
+        if args.dry_run:
+            log(f"{C.MAGENTA}[dry-run]{C.RESET} Would remove {entry}")
+            return
+        backup_directory(entry, args)
+        shutil.rmtree(entry)
+        log_verbose(f"{C.YELLOW}Removed{C.RESET} {entry} (overwrite)", args)
+
+
+def _sync_skills_symlink(target_dir: Path, target_name: str,
+                         conflict_strategy: str,
+                         args: argparse.Namespace) -> None:
+    """Sync skills via symlinks."""
     canonical_skills = {d.name for d in SKILLS_DIR.iterdir() if d.is_dir()}
 
-    # Remove stale symlinks pointing into our skills dir
-    for entry in target_dir.iterdir():
+    for entry in list(target_dir.iterdir()):
         if entry.is_symlink():
             link_target = Path(os.readlink(entry))
             try:
@@ -1035,12 +1141,15 @@ def sync_skills(target_dir: Path, args: argparse.Namespace) -> None:
             if str(resolved).startswith(str(SKILLS_DIR)):
                 if entry.name not in canonical_skills:
                     remove_file(entry, args)
-                else:
-                    # Will be re-created below if needed
-                    if resolved != (SKILLS_DIR / entry.name).resolve():
-                        remove_file(entry, args)
+                elif resolved != (SKILLS_DIR / entry.name).resolve():
+                    remove_file(entry, args)
+        elif entry.is_dir() and _is_managed_copy(entry) and entry.name in canonical_skills:
+            if args.dry_run:
+                log(f"{C.MAGENTA}[dry-run]{C.RESET} Would remove managed copy {entry.name} (switching to symlink)")
+            else:
+                shutil.rmtree(entry)
+                log_verbose(f"Removed managed copy {entry.name} (switching to symlink)", args)
 
-    # Create symlinks
     for skill_name in sorted(canonical_skills):
         link = target_dir / skill_name
         target = SKILLS_DIR / skill_name
@@ -1051,13 +1160,78 @@ def sync_skills(target_dir: Path, args: argparse.Namespace) -> None:
                     continue
                 remove_file(link, args)
             else:
-                log_verbose(f"Skipping {link} (not a symlink, preserving)", args)
-                continue
+                _handle_conflict(link, target_name, conflict_strategy, args)
+                if link.exists():
+                    continue
         if args.dry_run:
             log(f"{C.MAGENTA}[dry-run]{C.RESET} Would symlink {link} -> {target}")
             continue
         link.symlink_to(target)
         log_verbose(f"Symlinked {link.name}", args)
+
+
+def _sync_skills_copy(target_dir: Path, target_name: str,
+                      conflict_strategy: str,
+                      args: argparse.Namespace) -> None:
+    """Sync skills via recursive copy with .sync-meta markers."""
+    canonical_skills = {d.name for d in SKILLS_DIR.iterdir() if d.is_dir()}
+
+    for entry in list(target_dir.iterdir()):
+        if entry.is_symlink():
+            link_target = Path(os.readlink(entry))
+            try:
+                resolved = link_target.resolve()
+            except OSError:
+                resolved = link_target
+            if str(resolved).startswith(str(SKILLS_DIR)):
+                remove_file(entry, args)
+        elif entry.is_dir() and _is_managed_copy(entry):
+            if entry.name not in canonical_skills:
+                if args.dry_run:
+                    log(f"{C.MAGENTA}[dry-run]{C.RESET} Would remove stale copy {entry.name}")
+                else:
+                    shutil.rmtree(entry)
+                    log_verbose(f"{C.YELLOW}Removed stale copy{C.RESET} {entry.name}", args)
+
+    for skill_name in sorted(canonical_skills):
+        dest = target_dir / skill_name
+        source = SKILLS_DIR / skill_name
+        if dest.exists() or dest.is_symlink():
+            if dest.is_symlink():
+                remove_file(dest, args)
+            elif _is_managed_copy(dest):
+                if args.dry_run:
+                    log(f"{C.MAGENTA}[dry-run]{C.RESET} Would update copy {skill_name}")
+                    continue
+                shutil.rmtree(dest)
+            else:
+                _handle_conflict(dest, target_name, conflict_strategy, args)
+                if dest.exists():
+                    continue
+        if args.dry_run:
+            log(f"{C.MAGENTA}[dry-run]{C.RESET} Would copy {skill_name}")
+            continue
+        shutil.copytree(source, dest, symlinks=False)
+        _write_sync_meta(dest, source)
+        log_verbose(f"Copied {skill_name}", args)
+
+
+def sync_skills(target_dir: Path, args: argparse.Namespace,
+                target_config: Optional[dict] = None) -> None:
+    """Sync skills to a target directory using the configured mode."""
+    if not SKILLS_DIR.exists():
+        return
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if target_config is None:
+        target_config = {"name": "unknown", "sync_mode": "symlink",
+                         "conflict_strategy": "overwrite"}
+    mode = target_config.get("sync_mode", "symlink")
+    strategy = target_config.get("conflict_strategy", "overwrite")
+    name = target_config.get("name", "unknown")
+    if mode == "copy":
+        _sync_skills_copy(target_dir, name, strategy, args)
+    else:
+        _sync_skills_symlink(target_dir, name, strategy, args)
 
 
 # ---------------------------------------------------------------------------
@@ -1107,7 +1281,21 @@ def cmd_status(args: argparse.Namespace) -> None:
     section_header("Active Targets")
     active = manifest.get("active_targets", {})
     print(f"  {C.BOLD_WHITE}Rules{C.RESET}  -> {C.GREEN}{', '.join(active.get('rules', []))}{C.RESET}")
-    print(f"  {C.BOLD_WHITE}Skills{C.RESET} -> {C.GREEN}{', '.join(active.get('skills', []))}{C.RESET}")
+    skill_parts = []
+    for t in active.get("skills", []):
+        name = t["name"]
+        mode = t.get("sync_mode", "symlink")
+        strategy = t.get("conflict_strategy", "overwrite")
+        extras = []
+        if mode != "symlink":
+            extras.append(mode)
+        if strategy != "overwrite":
+            extras.append(strategy)
+        if extras:
+            skill_parts.append(f"{name} ({', '.join(extras)})")
+        else:
+            skill_parts.append(name)
+    print(f"  {C.BOLD_WHITE}Skills{C.RESET} -> {C.GREEN}{', '.join(skill_parts)}{C.RESET}")
 
     skill_count = 0
     if SKILLS_DIR.exists():
@@ -1327,7 +1515,7 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
             print(f"{C.BOLD_RED}Error:{C.RESET} unknown agent '{args.only}'. Options: {', '.join(GENERATORS)}")
             sys.exit(1)
         active_rules = [args.only] if args.only in active_rules else []
-        active_skills = [args.only] if args.only in active_skills else []
+        active_skills = [t for t in active_skills if t["name"] == args.only]
 
     section_header("Rules")
     rule_count = 0
@@ -1340,12 +1528,14 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
 
     section_header("Skills")
     skill_count = 0
-    for target in active_skills:
-        skills_dir = AGENT_PATHS.get(target, {}).get("skills_dir")
+    for target_cfg in active_skills:
+        target_name = target_cfg["name"]
+        skills_dir = AGENT_PATHS.get(target_name, {}).get("skills_dir")
         if skills_dir:
             n = len(list(SKILLS_DIR.iterdir())) if SKILLS_DIR.exists() else 0
-            summary_line(AGENT_PATHS[target]["label"], n, "symlinks")
-            if target == "antigravity":
+            mode = target_cfg.get("sync_mode", "symlink")
+            summary_line(AGENT_PATHS[target_name]["label"], n, mode)
+            if target_name == "antigravity":
                 gen_antigravity(manifest, args)
             skill_count += 1
 
@@ -1481,30 +1671,33 @@ def _find_generated_rules(manifest: dict) -> list[Path]:
     return found
 
 
-def _find_skill_symlinks(manifest: dict) -> list[Path]:
-    """Scan active skill targets and return symlinks pointing into canonical skills."""
-    found: list[Path] = []
-    for target in manifest["active_targets"]["skills"]:
+def _find_managed_skills(manifest: dict) -> tuple[list[Path], list[Path]]:
+    """Find managed skill symlinks and copies. Returns (symlinks, copies)."""
+    symlinks: list[Path] = []
+    copies: list[Path] = []
+    for target_cfg in manifest["active_targets"]["skills"]:
+        target = target_cfg["name"]
         skills_dir = AGENT_PATHS.get(target, {}).get("skills_dir")
         if not skills_dir or not skills_dir.exists():
             continue
         for entry in sorted(skills_dir.iterdir()):
-            if not entry.is_symlink():
-                continue
-            try:
-                resolved = Path(os.readlink(entry)).resolve()
-            except OSError:
-                continue
-            if str(resolved).startswith(str(SKILLS_DIR)):
-                found.append(entry)
-    return found
+            if entry.is_symlink():
+                try:
+                    resolved = Path(os.readlink(entry)).resolve()
+                except OSError:
+                    continue
+                if str(resolved).startswith(str(SKILLS_DIR)):
+                    symlinks.append(entry)
+            elif entry.is_dir() and _is_managed_copy(entry):
+                copies.append(entry)
+    return symlinks, copies
 
 
 def cmd_clean(args: argparse.Namespace) -> None:
     manifest = read_manifest()
 
     rule_files = _find_generated_rules(manifest)
-    skill_links = _find_skill_symlinks(manifest)
+    skill_links, skill_copies = _find_managed_skills(manifest)
     backup = latest_backup()
 
     restorable: list[Path] = []
@@ -1518,8 +1711,9 @@ def cmd_clean(args: argparse.Namespace) -> None:
                     if original in rule_files or original in skill_links:
                         restorable.append(original)
 
-    if not rule_files and not skill_links:
-        print(f"\n  {C.GREEN}Nothing to clean{C.RESET} -- no generated files or skill symlinks found.")
+    total_skills = len(skill_links) + len(skill_copies)
+    if not rule_files and not total_skills:
+        print(f"\n  {C.GREEN}Nothing to clean{C.RESET} -- no generated files or managed skills found.")
         return
 
     section_header(f"Generated rule files ({len(rule_files)})")
@@ -1532,7 +1726,14 @@ def cmd_clean(args: argparse.Namespace) -> None:
     for s in skill_links:
         print(f"  {s}")
 
-    print(f"\n  Total: {C.BOLD}{len(rule_files)}{C.RESET} generated, {C.BOLD}{len(skill_links)}{C.RESET} symlinks")
+    if skill_copies:
+        section_header(f"Skill copies ({len(skill_copies)})")
+        for c in skill_copies:
+            print(f"  {c}")
+
+    print(f"\n  Total: {C.BOLD}{len(rule_files)}{C.RESET} generated, "
+          f"{C.BOLD}{len(skill_links)}{C.RESET} symlinks, "
+          f"{C.BOLD}{len(skill_copies)}{C.RESET} copies")
     if restorable:
         print(f"  {C.BLUE}{len(restorable)} files will be restored from backup{C.RESET} ({backup.name})")
     print(f"  Your canonical source in ~/.ai-agent/ is {C.GREEN}not affected{C.RESET}.\n")
@@ -1555,13 +1756,22 @@ def cmd_clean(args: argparse.Namespace) -> None:
             s.unlink(missing_ok=True)
             log_verbose(f"{C.YELLOW}Removed symlink{C.RESET} {s}", args)
 
+    for c in skill_copies:
+        if args.dry_run:
+            log_verbose(f"{C.MAGENTA}[dry-run]{C.RESET} Would remove copy {c}", args)
+        else:
+            shutil.rmtree(c)
+            log_verbose(f"{C.YELLOW}Removed copy{C.RESET} {c}", args)
+
     restored = 0
     if backup and restorable:
         restored = restore_from_backup(backup, restorable, args)
 
     section_header("Summary")
     dry = f" {C.MAGENTA}(dry-run){C.RESET}" if args.dry_run else ""
-    print(f"  {C.BOLD}{len(rule_files)}{C.RESET} generated removed, {C.BOLD}{len(skill_links)}{C.RESET} symlinks removed")
+    print(f"  {C.BOLD}{len(rule_files)}{C.RESET} generated removed, "
+          f"{C.BOLD}{len(skill_links)}{C.RESET} symlinks removed, "
+          f"{C.BOLD}{len(skill_copies)}{C.RESET} copies removed")
     if restored:
         print(f"  {C.GREEN}{restored} files restored from backup{C.RESET}")
     print(f"  {dry}" if dry else "")
@@ -1659,7 +1869,7 @@ def cmd_reconfigure(args: argparse.Namespace) -> None:
 
     print(f"\n{C.BOLD_CYAN}=== Reconfigure Sync Targets ==={C.RESET}\n")
     print(f"  Current rule targets:  {C.GREEN}{', '.join(manifest['active_targets']['rules'])}{C.RESET}")
-    print(f"  Current skill targets: {C.GREEN}{', '.join(manifest['active_targets']['skills'])}{C.RESET}")
+    print(f"  Current skill targets: {C.GREEN}{', '.join(_skill_target_names(manifest))}{C.RESET}")
 
     rule_target_options = [
         (k, f"{AGENT_PATHS[k]['label']}  ({AGENT_PATHS[k]['description']})")
@@ -1676,12 +1886,22 @@ def cmd_reconfigure(args: argparse.Namespace) -> None:
         defaults=manifest["active_targets"]["rules"],
         auto_accept=args.yes,
     )
-    manifest["active_targets"]["skills"] = multi_select(
+
+    old_skills = {t["name"]: t for t in manifest["active_targets"]["skills"]}
+    selected_names = multi_select(
         "Select skill targets:",
         skill_target_options,
-        defaults=manifest["active_targets"]["skills"],
+        defaults=list(old_skills.keys()),
         auto_accept=args.yes,
     )
+    new_skills = []
+    for name in selected_names:
+        if name in old_skills:
+            new_skills.append(old_skills[name])
+        else:
+            new_skills.append({"name": name, "sync_mode": "symlink",
+                               "conflict_strategy": "overwrite"})
+    manifest["active_targets"]["skills"] = new_skills
 
     write_manifest(manifest, args)
     print()
