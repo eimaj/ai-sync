@@ -39,7 +39,7 @@ The script itself is version-controlled and pushed to GitHub. It has zero extern
 
 ### Out of scope
 
-- IDE-specific skills (e.g., Cursor-only skills like `create-rule`) -- these stay in their native agent directories and are not imported or synced
+- IDE-specific skills (e.g., agent-native skills managed by that agent alone) -- these stay in their native agent directories and are not imported or synced
 - Agent system directories (e.g., `~/.codex/skills/.system/`) -- not touched
 - Workspace-level rules (e.g., `<project>/.cursor/rules/`) -- per-project, not global
 - ChatGPT -- no file-based global config; covered via AGENTS.md

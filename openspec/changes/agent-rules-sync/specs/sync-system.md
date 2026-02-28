@@ -281,9 +281,177 @@ The system SHALL manage skill symlinks for agents that support them (Cursor, Cod
 
 #### Scenario: Skill sync preserves non-managed symlinks
 
-- GIVEN Codex skills dir has symlinks pointing to `~/.cursor/skills-cursor/create-rule` (agent-specific skills)
-- AND symlinks pointing to `~/.ai-agent/skills/some-skill` (managed by sync)
+- GIVEN an agent skills dir has symlinks pointing to agent-internal directories (not managed by sync)
+- AND symlinks pointing to `~/.ai-agent/skills/` (managed by sync)
 - WHEN `sync` runs
 - THEN only symlinks pointing into `~/.ai-agent/skills/` are removed and re-created
-- AND symlinks pointing elsewhere (e.g., `~/.cursor/skills-cursor/`) are left untouched
+- AND symlinks pointing elsewhere are left untouched
 
+### Requirement: Add-Rule Mode
+
+The system SHALL provide an `add-rule` subcommand that creates a new rule in one step:
+
+1. Write the rule file to `rules/{id}.md` (from `--file` path or placeholder content)
+2. Add a manifest entry with Cursor metadata (`alwaysApply`, `description`) and optional `exclude` list
+3. Run `sync` to propagate to all active targets
+
+The command SHALL fail if a rule with that ID already exists.
+
+#### Scenario: Add rule from file
+
+- GIVEN a markdown file at a user-specified path
+- WHEN the user runs `add-rule my-rule --file ~/drafts/my-rule.md --description "My rule"`
+- THEN the file content is written to `rules/my-rule.md`
+- AND a manifest entry is created with the description
+- AND sync runs to propagate the new rule
+
+#### Scenario: Add rule with placeholder
+
+- GIVEN no `--file` flag
+- WHEN the user runs `add-rule my-rule --description "My rule"`
+- THEN a placeholder file is created at `rules/my-rule.md`
+- AND a manifest entry is created
+- AND sync runs
+
+### Requirement: Remove-Rule Mode
+
+The system SHALL provide a `remove-rule` subcommand that:
+
+1. Back up the rule file before deletion
+2. Delete the canonical rule file from `rules/`
+3. Remove the manifest entry
+4. Run `sync` to clean up generated files across all active targets
+
+#### Scenario: Remove existing rule
+
+- GIVEN a rule `my-rule` exists in the manifest and `rules/my-rule.md`
+- WHEN the user runs `remove-rule my-rule`
+- THEN the file is backed up, then deleted
+- AND the manifest entry is removed
+- AND sync removes the rule from all agent configs
+
+### Requirement: Set Mode
+
+The system SHALL provide a `set` subcommand that updates manifest configuration fields from the command line without hand-editing JSON.
+
+Supported keys:
+- `agents_md.paths` -- comma-separated output paths (array)
+- `agents_md.header` -- markdown header for generated AGENTS.md (scalar)
+- `agents_md.preamble` -- preamble text (scalar)
+
+#### Scenario: Set AGENTS.md paths
+
+- GIVEN a configured manifest
+- WHEN the user runs `set agents_md.paths "~/Code/**/AGENTS.md"`
+- THEN the manifest's `agents_md.paths` is updated to the new value
+
+### Requirement: Status Mode
+
+The system SHALL provide a `status` subcommand that displays a read-only summary:
+
+- All rules with their source, flags (`alwaysApply`, `globs`), and description
+- Active targets for rules and skills
+- Canonical skills count and names
+- Configured AGENTS.md paths
+- Last sync timestamp
+
+#### Scenario: Status display
+
+- GIVEN a configured and synced manifest
+- WHEN the user runs `status`
+- THEN all rules, targets, skills, and paths are displayed
+- AND no files are modified
+
+### Requirement: Clean Mode
+
+The system SHALL provide a `clean` subcommand that:
+
+1. Find all generated rule files and skill symlinks across active targets
+2. Remove generated files (identified by the generated header)
+3. Remove skill symlinks pointing into `~/.ai-agent/skills/`
+4. Restore originals from the most recent backup (if available)
+5. Leave canonical source in `~/.ai-agent/` untouched
+
+#### Scenario: Clean restores from backup
+
+- GIVEN a previous sync wrote generated files and created backups
+- WHEN the user runs `clean`
+- THEN generated files are removed
+- AND skill symlinks are removed
+- AND original files are restored from the most recent backup
+
+### Requirement: Backup System
+
+The system SHALL maintain timestamped backups of files before they are overwritten:
+
+- Backups are stored at `~/.ai-agent/backups/{timestamp}/files/`
+- Each backup session has a `meta.json` with creation time and triggering command
+- Files are backed up before any write or removal operation
+- The `clean` command can restore from the most recent backup
+- `--dry-run` skips actual backup creation but logs what would be backed up
+
+#### Scenario: Backup before sync
+
+- GIVEN existing agent config files
+- WHEN `sync` runs and would overwrite them
+- THEN the original files are copied to the backup directory before writing
+
+#### Scenario: Backup before rule removal
+
+- GIVEN a rule file exists
+- WHEN `remove-rule` deletes it
+- THEN the file is backed up before deletion
+
+### Requirement: Archive-Skill Mode
+
+The system SHALL provide an `archive-skill` subcommand that temporarily removes skills from active sync:
+
+1. Move `~/.ai-agent/skills/<name>/` to `~/.ai-agent/skills-archived/<name>/`
+2. Run `sync` to remove stale symlinks from all target dirs
+3. Report what was archived and which symlinks were removed
+4. Accept multiple skill names in a single invocation
+5. Support `--dry-run` to preview without moving
+6. Support `--list` to display currently archived skills
+
+The command SHALL fail if the skill does not exist in the canonical skills directory.
+The command SHALL fail if a skill with that name already exists in the archive directory.
+
+#### Scenario: Archive a skill
+
+- GIVEN a skill `my-skill` exists in `~/.ai-agent/skills/`
+- WHEN the user runs `archive-skill my-skill`
+- THEN the directory is moved to `~/.ai-agent/skills-archived/my-skill/`
+- AND sync removes symlinks for `my-skill` from all target dirs
+
+#### Scenario: Archive multiple skills
+
+- GIVEN skills `skill-a` and `skill-b` exist in `~/.ai-agent/skills/`
+- WHEN the user runs `archive-skill skill-a skill-b`
+- THEN both are moved to the archive directory
+- AND sync removes symlinks for both from all target dirs
+
+#### Scenario: List archived skills
+
+- GIVEN skills have been previously archived
+- WHEN the user runs `archive-skill --list`
+- THEN the names of all archived skills are displayed
+
+### Requirement: Restore-Skill Mode
+
+The system SHALL provide a `restore-skill` subcommand that re-activates archived skills:
+
+1. Move `~/.ai-agent/skills-archived/<name>/` back to `~/.ai-agent/skills/<name>/`
+2. Run `sync` to create symlinks in all target dirs
+3. Report what was restored
+4. Accept multiple skill names in a single invocation
+5. Support `--dry-run` to preview without moving
+
+The command SHALL fail if the skill does not exist in the archive directory.
+The command SHALL fail if a skill with that name already exists in the canonical skills directory.
+
+#### Scenario: Restore an archived skill
+
+- GIVEN a skill `my-skill` exists in `~/.ai-agent/skills-archived/`
+- WHEN the user runs `restore-skill my-skill`
+- THEN the directory is moved back to `~/.ai-agent/skills/my-skill/`
+- AND sync creates symlinks for `my-skill` in all target dirs
