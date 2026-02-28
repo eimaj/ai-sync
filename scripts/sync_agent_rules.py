@@ -1505,6 +1505,8 @@ def cmd_init(args: argparse.Namespace) -> None:
 def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
     if manifest is None:
         manifest = read_manifest()
+    else:
+        _normalize_targets(manifest)
 
     if _current_backup is None:
         init_backup("sync")
