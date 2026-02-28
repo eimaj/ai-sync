@@ -71,6 +71,12 @@ You should get a structured JSON response with rules, targets, skills, and paths
 | `sync_restore_skill` | Restore archived skills (`names`, `dry_run`) |
 | `sync_clean` | Remove generated files, restore from backup (`dry_run`) |
 
+## Per-Target Config
+
+The `sync_status` tool returns the full normalized `active_targets` configuration, including per-target `sync_mode` (`symlink` or `copy`) and `conflict_strategy` (`overwrite` or `archive`) for each skill target. String entries in the manifest are automatically normalized to their object form with defaults.
+
+The `sync_reconfigure` tool preserves existing per-target settings when reselecting targets.
+
 ## How It Works
 
 The MCP server imports `sync_agent_rules.py` directly and calls its functions. It adapts `argparse.Namespace` inputs and captures terminal output into structured JSON responses. The server runs locally via `stdio` -- no network, no auth.

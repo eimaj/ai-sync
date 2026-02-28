@@ -31,12 +31,12 @@ Edit rules once in `~/.ai-agent/rules/`, run `sync`, and every agent gets update
 
 | Agent | Rules Format | Skills |
 |-------|-------------|--------|
-| Cursor | Individual `.mdc` files with YAML frontmatter | Symlinks |
-| Codex | Concatenated `model-instructions.md` | Symlinks |
-| Claude Code | `CLAUDE.md` | -- |
-| Gemini CLI | `GEMINI.md` | Symlinks |
+| Cursor | Individual `.mdc` files with YAML frontmatter | Symlinks or Copy |
+| Codex | Concatenated `model-instructions.md` | Symlinks or Copy |
+| Claude Code | `CLAUDE.md` | Symlinks or Copy |
+| Gemini CLI | `GEMINI.md` | Symlinks or Copy |
 | Kiro | `steering/conventions.md` | -- |
-| Antigravity | -- | Symlinks |
+| Antigravity | -- | Symlinks or Copy |
 | AGENTS.md | Condensed numbered list | -- |
 
 ---
@@ -140,6 +140,28 @@ sync-ai-rules set agents_md.paths "~/Code/**/AGENTS.md"
 sync-ai-rules reconfigure
 ```
 
+### 🔗 Per-Target Skill Delivery
+
+By default, skills are delivered via **symlinks**. For environments where symlinks don't work (remote, sandboxed, containerized), use **copy** mode. Configure per target in `manifest.json`:
+
+```json
+{
+  "active_targets": {
+    "skills": [
+      "cursor",
+      { "name": "claude", "sync_mode": "copy", "conflict_strategy": "archive" }
+    ]
+  }
+}
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `sync_mode` | `symlink`, `copy` | `symlink` | How skills are delivered to the target |
+| `conflict_strategy` | `overwrite`, `archive` | `overwrite` | What to do with existing non-managed content |
+
+String entries (e.g. `"cursor"`) default to `symlink` + `overwrite`.
+
 ### 🔍 Flags
 
 | Flag | Effect |
@@ -193,7 +215,7 @@ Wildcards expand at sync time using Python's `glob`. A pattern like `~/Code/**/A
 | **Codex** | Concatenates rules with section headers into one file |
 | **Claude/Gemini/Kiro** | Concatenates rules into a single markdown file |
 | **AGENTS.md** | Writes a condensed numbered summary to configured paths |
-| **Skills** | Creates symlinks from agent dirs to `~/.ai-agent/skills/` |
+| **Skills** | Symlinks or copies skills per target (`sync_mode` in manifest) |
 
 All generated files include a `# Generated from ~/.ai-agent/` header so the tool can detect and skip them during re-import.
 
@@ -211,8 +233,11 @@ All generated files include a `# Generated from ~/.ai-agent/` header so the tool
 ├── manifest.json                 # Your config (gitignored)
 ├── rules/                        # Your rules (gitignored)
 ├── skills/                       # Your skills (gitignored)
+├── skills-archived/              # Archived/conflict-archived skills (gitignored)
 └── backups/                      # Auto-created backups (gitignored)
 ```
+
+Skills delivered via copy mode include a `.sync-meta` marker file for lifecycle management.
 
 The script is version-controlled. Your personal rules, skills, config, and backups stay local.
 

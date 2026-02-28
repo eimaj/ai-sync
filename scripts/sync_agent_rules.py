@@ -265,12 +265,12 @@ def build_parser() -> argparse.ArgumentParser:
         description="Sync AI agent rules and skills across coding assistants.",
         epilog=(
             "supported agents:\n"
-            "  cursor        .mdc files with YAML frontmatter + skill symlinks\n"
-            "  codex         model-instructions.md + skill symlinks\n"
-            "  claude        CLAUDE.md\n"
-            "  gemini        GEMINI.md + skill symlinks\n"
+            "  cursor        .mdc files with YAML frontmatter + skills (symlink/copy)\n"
+            "  codex         model-instructions.md + skills (symlink/copy)\n"
+            "  claude        CLAUDE.md + skills (symlink/copy)\n"
+            "  gemini        GEMINI.md + skills (symlink/copy)\n"
             "  kiro          steering/conventions.md\n"
-            "  antigravity   skill symlinks only\n"
+            "  antigravity   skills only (symlink/copy)\n"
             "  agents-md     condensed numbered list\n"
             "\n"
             "examples:\n"
@@ -319,8 +319,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="regenerate all agent configs from canonical source",
                    description=(
                        "Read manifest.json and generate agent-native config files\n"
-                       "for each active target. Existing generated files are\n"
-                       "backed up before overwriting."
+                       "for each active target. Skills are delivered via symlink or\n"
+                       "copy per target (configured in manifest.json active_targets).\n"
+                       "Existing generated files are backed up before overwriting."
                    ))
 
     sub.add_parser("status", formatter_class=F,
@@ -334,16 +335,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help="change which agents to sync to",
                    description=(
                        "Re-select which agents receive rule syncs and skill\n"
-                       "symlinks, then run a sync with the new targets."
+                       "delivery, then run a sync with the new targets.\n"
+                       "Preserves per-target sync_mode and conflict_strategy."
                    ))
 
     sub.add_parser("clean", formatter_class=F,
                    help="remove generated files and restore originals",
                    description=(
-                       "Find all generated rule files and skill symlinks,\n"
-                       "remove them, and restore the originals from the most\n"
-                       "recent backup. Your canonical source in ~/.ai-agent/\n"
-                       "is not affected."
+                       "Find all generated rule files, skill symlinks, and\n"
+                       "managed skill copies, remove them, and restore the\n"
+                       "originals from the most recent backup. Your canonical\n"
+                       "source in ~/.ai-agent/ is not affected."
                    ))
 
     add_p = sub.add_parser("add-rule", formatter_class=F,
