@@ -21,6 +21,7 @@ Edit rules once in `~/.ai-agent/rules/`, run `sync`, and every agent gets update
 - [⚡ How It Works](#-how-it-works)
 - [📁 Directory Structure](#-directory-structure)
 - [⏪ Reverting / Uninstalling](#-reverting--uninstalling)
+- [🔌 MCP Server](#-mcp-server)
 - [🧪 Testing](#-testing)
 - [✅ Verify It Worked](#-verify-it-worked)
 
@@ -94,6 +95,8 @@ Use `--verbose` with any command to see each backup as it happens.
 | `set` | Update manifest fields (e.g. `agents_md.paths`) |
 | `clean` | Remove generated files and restore originals from backup |
 | `reconfigure` | Change which agents to sync to |
+| `archive-skill` | Move skills out of active sync (`--list` to view) |
+| `restore-skill` | Restore archived skills to active sync |
 
 ### Everyday workflow
 
@@ -236,6 +239,45 @@ sync-ai-rules --dry-run clean
 ```
 
 Files marked `<- will restore from backup` in the preview will be restored to their pre-sync state.
+
+---
+
+## 🔌 MCP Server
+
+An optional MCP server lets AI tools call sync operations directly as structured tools -- no bash commands needed.
+
+### Setup
+
+```bash
+# Install uv if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create venv and install dependencies
+cd ~/.ai-agent/mcp
+uv venv --python 3.13
+uv pip install -r requirements.txt
+```
+
+### Configure your AI tool
+
+**Cursor** (`~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "sync-ai-rules": {
+      "command": "/Users/<you>/.ai-agent/mcp/.venv/bin/python",
+      "args": ["/Users/<you>/.ai-agent/mcp/server.py"]
+    }
+  }
+}
+```
+
+**Claude Code**: `claude mcp add sync-ai-rules --transport stdio -- ~/.ai-agent/mcp/.venv/bin/python ~/.ai-agent/mcp/server.py`
+
+**Codex**: `codex mcp add sync-ai-rules --transport stdio -- ~/.ai-agent/mcp/.venv/bin/python ~/.ai-agent/mcp/server.py`
+
+See [`mcp/README.md`](mcp/README.md) for full details and available tools.
 
 ---
 
