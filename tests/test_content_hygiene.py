@@ -1,5 +1,6 @@
 """Repository content hygiene checks for rules and skills."""
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -45,3 +46,21 @@ def test_all_skills_have_required_frontmatter_fields():
 
         assert "name:" in frontmatter, f"missing name in {skill_file}"
         assert "description:" in frontmatter, f"missing description in {skill_file}"
+
+
+def test_local_markdown_links_resolve():
+    link_pattern = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+
+    for path in _iter_markdown_files():
+        text = path.read_text(errors="ignore")
+
+        for link in link_pattern.findall(text):
+            if link.startswith(("http://", "https://", "mailto:", "#")):
+                continue
+
+            target = link.split("#", 1)[0]
+            if not target:
+                continue
+
+            resolved = (path.parent / target).resolve()
+            assert resolved.exists(), f"broken local link in {path}: {link}"
