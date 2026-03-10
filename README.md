@@ -147,6 +147,34 @@ sync-ai-rules set agents_md.paths "~/Code/**/AGENTS.md"
 sync-ai-rules reconfigure
 ```
 
+### 🎯 Per-Target Sync Components
+
+You can decide per tool whether sync updates:
+
+- **instructions** — `AGENTS.md` for Cursor/Codex, `CLAUDE.md` for Claude, `GEMINI.md` for Gemini
+- **rules** — native rule formats like Cursor `.mdc`, Codex `model-instructions.md`, and Kiro steering files
+- **skills** — linked or copied skill directories
+
+```json
+{
+  "active_targets": {
+    "instructions": ["cursor", "codex"],
+    "rules": ["cursor", "codex"],
+    "skills": [
+      "cursor",
+      "codex",
+      { "name": "claude", "sync_mode": "copy", "conflict_strategy": "overwrite" }
+    ]
+  }
+}
+```
+
+That configuration syncs:
+
+- Cursor: `AGENTS.md`, native rules, and skills
+- Codex: `AGENTS.md`, native rules, and skills
+- Claude: skills only
+
 ### 🔗 Per-Target Skill Delivery
 
 By default, skills are delivered via **symlinks**. For environments where symlinks don't work (remote, sandboxed, containerized), use **copy** mode. Configure per target in `manifest.json`:
@@ -155,7 +183,7 @@ By default, skills are delivered via **symlinks**. For environments where symlin
 {
   "active_targets": {
     "skills": [
-      "cursor",
+      { "name": "cursor" },
       { "name": "claude", "sync_mode": "copy", "conflict_strategy": "archive" }
     ]
   }
@@ -212,7 +240,7 @@ Wildcards expand at sync time using Python's `glob`. A pattern like `~/Code/**/A
 
 ## ⚡ How It Works
 
-**`init`** scans your existing agent configs (Cursor `.mdc`, Codex `model-instructions.md`, etc.), deduplicates across sources, and lets you cherry-pick which rules and skills to import via interactive multi-select. It writes canonical plain-markdown files to `rules/`, copies shared skills to `skills/`, and creates `manifest.json`.
+**`init`** scans your existing agent configs (Cursor `.mdc`, Codex `model-instructions.md`, etc.), deduplicates across sources, and lets you cherry-pick which instructions, rules, and skills to import via interactive multi-select. It writes canonical plain-markdown files to `rules/`, copies shared skills to `skills/`, and creates `manifest.json`.
 
 **`sync`** reads `manifest.json` and generates agent-native configs:
 
