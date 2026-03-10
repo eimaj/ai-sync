@@ -23,9 +23,15 @@ class TestCmdStatus:
         assert "other-rule" in out
 
     def test_output_contains_targets(self, fake_home, capsys):
-        seed_manifest(fake_home, rule_targets=["cursor", "codex"])
+        seed_manifest(
+            fake_home,
+            instruction_targets=["cursor", "claude"],
+            rule_targets=["cursor", "codex"],
+        )
         mod.cmd_status(make_args(command="status"))
         out = capsys.readouterr().out
+        assert "Instructions" in out
+        assert "claude" in out
         assert "cursor" in out
         assert "codex" in out
 
@@ -37,6 +43,17 @@ class TestCmdStatus:
 
 
 class TestCmdSync:
+    def test_normalizes_legacy_instruction_targets(self, fake_home):
+        manifest = seed_manifest(fake_home, rule_targets=["cursor", "codex"])
+        del manifest["active_targets"]["instructions"]
+        manifest["active_targets"]["rules"] = ["cursor", "codex", "claude", "agents-md"]
+        mod.MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n")
+
+        normalized = mod.read_manifest()
+
+        assert normalized["active_targets"]["instructions"] == ["cursor", "codex", "claude"]
+        assert normalized["active_targets"]["rules"] == ["cursor", "codex"]
+
     def test_generates_files(self, fake_home):
         seed_manifest(fake_home, rules=[("rule-a", "# A\nContent.\n")])
         mod.cmd_sync(make_args())
@@ -68,6 +85,38 @@ class TestCmdSync:
         seed_manifest(fake_home)
         with pytest.raises(SystemExit):
             mod.cmd_sync(make_args(only="nonexistent"))
+
+    def test_syncs_skills_without_rule_targets(self, fake_home):
+        skills_dir = fake_home / ".ai-agent" / "skills"
+        skill = skills_dir / "claude-skill"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("# Claude Skill")
+
+        seed_manifest(
+            fake_home,
+            rule_targets=[],
+            skill_targets=[{"name": "claude", "sync_mode": "symlink", "conflict_strategy": "overwrite"}],
+        )
+
+        mod.cmd_sync(make_args())
+
+        link = mod.AGENT_PATHS["claude"]["skills_dir"] / "claude-skill"
+        assert link.is_symlink()
+        assert link.resolve() == skill.resolve()
+
+    def test_syncs_agents_md_from_instruction_targets(self, fake_home):
+        target = fake_home / "workspace" / "AGENTS.md"
+        seed_manifest(
+            fake_home,
+            instruction_targets=["cursor", "codex"],
+            rule_targets=["cursor"],
+            agents_md_paths=[str(target)],
+        )
+
+        mod.cmd_sync(make_args())
+
+        assert target.exists()
+        assert mod.GENERATED_HEADER in target.read_text()
 
 
 class TestCmdAddRule:
@@ -206,10 +255,15 @@ class TestCmdClean:
 
 class TestCmdReconfigure:
     def test_yes_preserves_defaults(self, fake_home, capsys):
-        seed_manifest(fake_home, rule_targets=["cursor", "codex"])
+        seed_manifest(
+            fake_home,
+            instruction_targets=["cursor"],
+            rule_targets=["cursor", "codex"],
+        )
         mod.cmd_reconfigure(make_args(command="reconfigure"))
 
         manifest = json.loads(mod.MANIFEST_PATH.read_text())
+        assert "cursor" in manifest["active_targets"]["instructions"]
         assert "cursor" in manifest["active_targets"]["rules"]
         assert "codex" in manifest["active_targets"]["rules"]
 

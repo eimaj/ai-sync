@@ -115,8 +115,11 @@ AGENT_PATHS: dict[str, dict[str, Any]] = {
     },
 }
 
-RULE_TARGETS = [k for k in AGENT_PATHS if k != "antigravity"]
+INSTRUCTION_TARGETS = ["cursor", "codex", "claude", "gemini"]
+RULE_TARGETS = ["cursor", "codex", "kiro"]
 SKILL_TARGETS = [k for k, v in AGENT_PATHS.items() if "skills_dir" in v]
+AGENTS_MD_TARGETS = {"cursor", "codex"}
+SINGLE_FILE_INSTRUCTION_TARGETS = {"claude", "gemini"}
 
 SKIP_SKILL_DIRS: set[str] = set()
 SKIP_SKILL_PREFIXES: tuple[str, ...] = ()
@@ -318,24 +321,25 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("sync", formatter_class=F,
                    help="regenerate all agent configs from canonical source",
                    description=(
-                       "Read manifest.json and generate agent-native config files\n"
-                       "for each active target. Skills are delivered via symlink or\n"
-                       "copy per target (configured in manifest.json active_targets).\n"
+                       "Read manifest.json and generate instruction files,\n"
+                       "native rule outputs, and skills for each active target.\n"
+                       "Skills are delivered via symlink or copy per target\n"
+                       "(configured in manifest.json active_targets).\n"
                        "Existing generated files are backed up before overwriting."
                    ))
 
     sub.add_parser("status", formatter_class=F,
                    help="show current configuration and sync state",
                    description=(
-                       "Display a read-only summary of rules, active targets,\n"
+                       "Display a read-only summary of instructions, rules,\n"
                        "skills, AGENTS.md paths, and the last sync timestamp."
                    ))
 
     sub.add_parser("reconfigure", formatter_class=F,
                    help="change which agents to sync to",
                    description=(
-                       "Re-select which agents receive rule syncs and skill\n"
-                       "delivery, then run a sync with the new targets.\n"
+                       "Re-select which agents receive instructions, native\n"
+                       "rules, and skill delivery, then run a sync.\n"
                        "Preserves per-target sync_mode and conflict_strategy."
                    ))
 
@@ -718,12 +722,31 @@ def _normalize_skill_target(entry: Any) -> dict[str, str]:
 
 
 def _normalize_targets(manifest: dict) -> None:
-    """Normalize active_targets in-place. Skills become objects; rules stay strings."""
-    active = manifest.get("active_targets", {})
-    active["skills"] = [_normalize_skill_target(e) for e in active.get("skills", [])]
-    active["rules"] = [
+    """Normalize active_targets in-place for instructions, rules, and skills."""
+    active = manifest.setdefault("active_targets", {})
+    legacy_rule_targets = [
         e["name"] if isinstance(e, dict) else e for e in active.get("rules", [])
     ]
+
+    if "instructions" in active:
+        instruction_targets = [
+            e["name"] if isinstance(e, dict) else e
+            for e in active.get("instructions", [])
+        ]
+    else:
+        instruction_targets = []
+        legacy_rule_set = set(legacy_rule_targets)
+        if "agents-md" in legacy_rule_set:
+            instruction_targets.extend(
+                [target for target in INSTRUCTION_TARGETS if target in AGENTS_MD_TARGETS]
+            )
+        for target in legacy_rule_targets:
+            if target in SINGLE_FILE_INSTRUCTION_TARGETS:
+                instruction_targets.append(target)
+
+    active["instructions"] = list(dict.fromkeys(instruction_targets))
+    active["rules"] = [t for t in legacy_rule_targets if t in RULE_TARGETS]
+    active["skills"] = [_normalize_skill_target(e) for e in active.get("skills", [])]
 
 
 def _skill_target_names(manifest: dict) -> list[str]:
@@ -962,11 +985,6 @@ def gen_cursor(manifest: dict, args: argparse.Namespace) -> None:
             if is_generated_file(body):
                 remove_file(f, args)
 
-    if "skills_dir" in AGENT_PATHS["cursor"]:
-        cfg = _get_skill_target_config(manifest, "cursor")
-        sync_skills(AGENT_PATHS["cursor"]["skills_dir"], args, target_config=cfg)
-
-
 def gen_codex(manifest: dict, args: argparse.Namespace) -> None:
     rules = _rules_for_target(manifest, "codex")
     parts = [generated_header(), ""]
@@ -977,23 +995,12 @@ def gen_codex(manifest: dict, args: argparse.Namespace) -> None:
         parts.append("")
     write_file(AGENT_PATHS["codex"]["rules_file"], "\n".join(parts), args)
 
-    if "skills_dir" in AGENT_PATHS["codex"]:
-        cfg = _get_skill_target_config(manifest, "codex")
-        sync_skills(AGENT_PATHS["codex"]["skills_dir"], args, target_config=cfg)
-
-
 def gen_claude(manifest: dict, args: argparse.Namespace) -> None:
     _gen_concat_file(manifest, "claude", args)
-    if "skills_dir" in AGENT_PATHS["claude"]:
-        cfg = _get_skill_target_config(manifest, "claude")
-        sync_skills(AGENT_PATHS["claude"]["skills_dir"], args, target_config=cfg)
 
 
 def gen_gemini(manifest: dict, args: argparse.Namespace) -> None:
     _gen_concat_file(manifest, "gemini", args)
-    if "skills_dir" in AGENT_PATHS["gemini"]:
-        cfg = _get_skill_target_config(manifest, "gemini")
-        sync_skills(AGENT_PATHS["gemini"]["skills_dir"], args, target_config=cfg)
 
 
 def gen_kiro(manifest: dict, args: argparse.Namespace) -> None:
@@ -1249,12 +1256,20 @@ IMPORTERS: dict[str, Any] = {
     "kiro": import_kiro,
 }
 
-GENERATORS: dict[str, Any] = {
+RULE_GENERATORS: dict[str, Any] = {
     "cursor": gen_cursor,
     "codex": gen_codex,
+    "kiro": gen_kiro,
+}
+
+INSTRUCTION_GENERATORS: dict[str, Any] = {
     "claude": gen_claude,
     "gemini": gen_gemini,
-    "kiro": gen_kiro,
+}
+
+GENERATORS: dict[str, Any] = {
+    **RULE_GENERATORS,
+    **INSTRUCTION_GENERATORS,
     "antigravity": gen_antigravity,
     "agents-md": gen_agents_md,
 }
@@ -1282,7 +1297,11 @@ def cmd_status(args: argparse.Namespace) -> None:
 
     section_header("Active Targets")
     active = manifest.get("active_targets", {})
-    print(f"  {C.BOLD_WHITE}Rules{C.RESET}  -> {C.GREEN}{', '.join(active.get('rules', []))}{C.RESET}")
+    print(
+        f"  {C.BOLD_WHITE}Instructions{C.RESET} -> "
+        f"{C.GREEN}{', '.join(active.get('instructions', []))}{C.RESET}"
+    )
+    print(f"  {C.BOLD_WHITE}Rules{C.RESET}        -> {C.GREEN}{', '.join(active.get('rules', []))}{C.RESET}")
     skill_parts = []
     for t in active.get("skills", []):
         name = t["name"]
@@ -1419,6 +1438,10 @@ def cmd_init(args: argparse.Namespace) -> None:
     print(f"\n  {C.GREEN}Selected:{C.RESET} {C.BOLD}{len(all_rules)}{C.RESET} rules, {C.BOLD}{len(all_skills)}{C.RESET} skills")
 
     # Step 3: Select targets
+    instruction_target_options = [
+        (k, f"{AGENT_PATHS[k]['label']}  ({AGENT_PATHS[k]['description']})")
+        for k in INSTRUCTION_TARGETS
+    ]
     rule_target_options = [
         (k, f"{AGENT_PATHS[k]['label']}  ({AGENT_PATHS[k]['description']})")
         for k in RULE_TARGETS
@@ -1428,14 +1451,23 @@ def cmd_init(args: argparse.Namespace) -> None:
         for k in SKILL_TARGETS
     ]
 
+    default_instruction_targets = [
+        src for src in sources if src in INSTRUCTION_TARGETS
+    ]
     rule_targets = multi_select(
-        "Step 3a: Which agents do you want to sync RULES to?",
+        "Step 3b: Which agents do you want to sync RULES to?",
         rule_target_options,
         defaults=RULE_TARGETS,
         auto_accept=args.yes,
     )
+    instruction_targets = multi_select(
+        "Step 3a: Which agents do you want to sync INSTRUCTIONS to?",
+        instruction_target_options,
+        defaults=default_instruction_targets,
+        auto_accept=args.yes,
+    )
     skill_targets = multi_select(
-        "Step 3b: Which agents do you want to sync SKILLS to?",
+        "Step 3c: Which agents do you want to sync SKILLS to?",
         skill_target_options,
         defaults=SKILL_TARGETS,
         auto_accept=args.yes,
@@ -1443,7 +1475,7 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     # Step 4: Prompt for AGENTS.md paths
     agents_md_paths: list[str] = []
-    if "agents-md" in rule_targets and not args.yes:
+    if any(target in AGENTS_MD_TARGETS for target in instruction_targets) and not args.yes:
         raw = input("\n  AGENTS.md output paths (comma-separated, e.g. ~/Code/AGENTS.md): ").strip()
         if raw:
             agents_md_paths = [p.strip() for p in raw.split(",") if p.strip()]
@@ -1482,6 +1514,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         "updated": "",
         "imported_from": sources,
         "active_targets": {
+            "instructions": instruction_targets,
             "rules": rule_targets,
             "skills": skill_targets,
         },
@@ -1511,23 +1544,45 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
     if _current_backup is None:
         init_backup("sync")
 
+    active_instructions = manifest["active_targets"].get("instructions", [])
     active_rules = manifest["active_targets"]["rules"]
     active_skills = manifest["active_targets"]["skills"]
 
     if args.only:
-        if args.only not in GENERATORS:
-            print(f"{C.BOLD_RED}Error:{C.RESET} unknown agent '{args.only}'. Options: {', '.join(GENERATORS)}")
+        if args.only not in AGENT_PATHS:
+            print(f"{C.BOLD_RED}Error:{C.RESET} unknown agent '{args.only}'. Options: {', '.join(AGENT_PATHS)}")
             sys.exit(1)
+        active_instructions = [target for target in active_instructions if target == args.only]
         active_rules = [args.only] if args.only in active_rules else []
         active_skills = [t for t in active_skills if t["name"] == args.only]
+
+    section_header("Instructions")
+    instruction_count = 0
+    generated_agents_md = False
+    agents_md_paths = manifest.get("agents_md", {}).get("paths", [])
+    agents_md_path_count = len(_expand_agents_md_paths(agents_md_paths)) if agents_md_paths else 0
+    for target in active_instructions:
+        if target in AGENTS_MD_TARGETS:
+            summary_line(AGENT_PATHS[target]["label"], agents_md_path_count, "AGENTS.md")
+            if not generated_agents_md:
+                gen_agents_md(manifest, args)
+                generated_agents_md = True
+            instruction_count += 1
+            continue
+        generator = INSTRUCTION_GENERATORS.get(target)
+        if generator:
+            rules = _rules_for_target(manifest, target)
+            summary_line(AGENT_PATHS[target]["label"], len(rules), "instructions")
+            generator(manifest, args)
+            instruction_count += 1
 
     section_header("Rules")
     rule_count = 0
     for target in active_rules:
-        if target in GENERATORS:
+        if target in RULE_GENERATORS:
             rules = _rules_for_target(manifest, target)
             summary_line(AGENT_PATHS[target]["label"], len(rules), "rules")
-            GENERATORS[target](manifest, args)
+            RULE_GENERATORS[target](manifest, args)
             rule_count += 1
 
     section_header("Skills")
@@ -1539,8 +1594,7 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
             n = len(list(SKILLS_DIR.iterdir())) if SKILLS_DIR.exists() else 0
             mode = target_cfg.get("sync_mode", "symlink")
             summary_line(AGENT_PATHS[target_name]["label"], n, mode)
-            if target_name == "antigravity":
-                gen_antigravity(manifest, args)
+            sync_skills(skills_dir, args, target_config=target_cfg)
             skill_count += 1
 
     if not args.dry_run:
@@ -1549,7 +1603,11 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
 
     section_header("Summary")
     dry = f" {C.MAGENTA}(dry-run){C.RESET}" if args.dry_run else ""
-    print(f"  {C.BOLD}{rule_count}{C.RESET} rule targets, {C.BOLD}{skill_count}{C.RESET} skill targets synced.{dry}")
+    print(
+        f"  {C.BOLD}{instruction_count}{C.RESET} instruction targets, "
+        f"{C.BOLD}{rule_count}{C.RESET} rule targets, "
+        f"{C.BOLD}{skill_count}{C.RESET} skill targets synced.{dry}"
+    )
     print()
 
 
@@ -1646,8 +1704,23 @@ def cmd_set(args: argparse.Namespace) -> None:
 
 
 def _find_generated_rules(manifest: dict) -> list[Path]:
-    """Scan active targets and return paths to generated rule files."""
+    """Scan active targets and return generated instruction and rule files."""
     found: list[Path] = []
+    instruction_targets = manifest["active_targets"].get("instructions", [])
+    if any(target in AGENTS_MD_TARGETS for target in instruction_targets):
+        raw_paths = manifest.get("agents_md", {}).get("paths", [])
+        for t in _expand_agents_md_paths(raw_paths):
+            if t.exists() and is_generated_file(t.read_text()):
+                found.append(t)
+
+    for target in instruction_targets:
+        info = AGENT_PATHS.get(target, {})
+        if target not in SINGLE_FILE_INSTRUCTION_TARGETS:
+            continue
+        rules_file = info.get("rules_file")
+        if rules_file and rules_file.exists() and is_generated_file(rules_file.read_text()):
+            found.append(rules_file)
+
     for target in manifest["active_targets"]["rules"]:
         info = AGENT_PATHS.get(target, {})
 
@@ -1659,12 +1732,6 @@ def _find_generated_rules(manifest: dict) -> list[Path]:
                     _, body = parse_frontmatter(text)
                     if is_generated_file(body):
                         found.append(f)
-
-        elif target == "agents-md":
-            raw_paths = manifest.get("agents_md", {}).get("paths", [])
-            for t in _expand_agents_md_paths(raw_paths):
-                if t.exists() and is_generated_file(t.read_text()):
-                    found.append(t)
 
         else:
             rules_file = info.get("rules_file")
@@ -1872,9 +1939,17 @@ def cmd_reconfigure(args: argparse.Namespace) -> None:
     manifest = read_manifest()
 
     print(f"\n{C.BOLD_CYAN}=== Reconfigure Sync Targets ==={C.RESET}\n")
-    print(f"  Current rule targets:  {C.GREEN}{', '.join(manifest['active_targets']['rules'])}{C.RESET}")
-    print(f"  Current skill targets: {C.GREEN}{', '.join(_skill_target_names(manifest))}{C.RESET}")
+    print(
+        f"  Current instruction targets: "
+        f"{C.GREEN}{', '.join(manifest['active_targets'].get('instructions', []))}{C.RESET}"
+    )
+    print(f"  Current rule targets:        {C.GREEN}{', '.join(manifest['active_targets']['rules'])}{C.RESET}")
+    print(f"  Current skill targets:       {C.GREEN}{', '.join(_skill_target_names(manifest))}{C.RESET}")
 
+    instruction_target_options = [
+        (k, f"{AGENT_PATHS[k]['label']}  ({AGENT_PATHS[k]['description']})")
+        for k in INSTRUCTION_TARGETS
+    ]
     rule_target_options = [
         (k, f"{AGENT_PATHS[k]['label']}  ({AGENT_PATHS[k]['description']})")
         for k in RULE_TARGETS
@@ -1883,6 +1958,13 @@ def cmd_reconfigure(args: argparse.Namespace) -> None:
         (k, f"{AGENT_PATHS[k]['label']}  ({AGENT_PATHS[k]['description']})")
         for k in SKILL_TARGETS
     ]
+
+    manifest["active_targets"]["instructions"] = multi_select(
+        "Select instruction targets:",
+        instruction_target_options,
+        defaults=manifest["active_targets"].get("instructions", []),
+        auto_accept=args.yes,
+    )
 
     manifest["active_targets"]["rules"] = multi_select(
         "Select rule targets:",

@@ -69,6 +69,7 @@ def fake_home(tmp_path, monkeypatch):
 def seed_manifest(
     home: Path,
     rules: list[tuple[str, str]] | None = None,
+    instruction_targets: list[str] | None = None,
     rule_targets: list[str] | None = None,
     skill_targets: list[str] | None = None,
     agents_md_paths: list[str] | None = None,
@@ -96,6 +97,7 @@ def seed_manifest(
         "updated": "2026-01-01",
         "imported_from": ["test"],
         "active_targets": {
+            "instructions": instruction_targets if instruction_targets is not None else [],
             "rules": rule_targets if rule_targets is not None else ["cursor", "codex"],
             "skills": skill_targets if skill_targets is not None else [],
         },
