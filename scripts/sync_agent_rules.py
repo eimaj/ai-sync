@@ -132,6 +132,7 @@ SETTABLE_KEYS: dict[str, tuple[str, str, str]] = {
     "agents_md.paths": ("agents_md", "paths", "array"),
     "agents_md.header": ("agents_md", "header", "scalar"),
     "agents_md.preamble": ("agents_md", "preamble", "scalar"),
+    "claude_md.paths": ("claude_md", "paths", "array"),
 }
 
 # ---------------------------------------------------------------------------
@@ -397,10 +398,14 @@ def build_parser() -> argparse.ArgumentParser:
                                "  agents_md.paths      comma-separated output paths (supports globs)\n"
                                "  agents_md.header     markdown header for generated AGENTS.md files\n"
                                "  agents_md.preamble   text inserted after the header\n"
+                               "  claude_md.paths      comma-separated project CLAUDE.md output paths\n"
+                               "\n"
+                               "note: project_skills entries must be added manually to manifest.json\n"
                                "\n"
                                "examples:\n"
                                "  sync-ai-rules set agents_md.paths '~/Code/**/AGENTS.md'\n"
                                "  sync-ai-rules set agents_md.header '# My Rules'\n"
+                               "  sync-ai-rules set claude_md.paths '~/Code/carrot/CLAUDE.md,~/Code/crrt/CLAUDE.md'\n"
                            ))
     set_p.add_argument("key", help="dotted key path (e.g. agents_md.paths)")
     set_p.add_argument("value", help="new value (array fields are comma-separated)")
@@ -999,6 +1004,25 @@ def gen_claude(manifest: dict, args: argparse.Namespace) -> None:
     _gen_concat_file(manifest, "claude", args)
 
 
+def gen_claude_multipath(manifest: dict, args: argparse.Namespace) -> None:
+    """Write CLAUDE.md content to all paths configured in claude_md.paths."""
+    raw_paths = manifest.get("claude_md", {}).get("paths", [])
+    if not raw_paths:
+        return
+    targets = _expand_agents_md_paths(raw_paths)
+    if not targets:
+        return
+    rules = _rules_for_target(manifest, "claude")
+    parts = [generated_header(), ""]
+    for rule in rules:
+        content = (RULES_DIR / rule["file"]).read_text()
+        parts.append(content)
+        parts.append("")
+    content = "\n".join(parts)
+    for target in targets:
+        write_file(target, content, args)
+
+
 def gen_gemini(manifest: dict, args: argparse.Namespace) -> None:
     _gen_concat_file(manifest, "gemini", args)
 
@@ -1346,6 +1370,14 @@ def cmd_status(args: argparse.Namespace) -> None:
     else:
         print(f"  {C.DIM}(none configured){C.RESET}")
 
+    claude_md_paths = manifest.get("claude_md", {}).get("paths", [])
+    section_header("CLAUDE.md Paths")
+    if claude_md_paths:
+        for p in claude_md_paths:
+            print(f"  {p}")
+    else:
+        print(f"  {C.DIM}(none configured){C.RESET}")
+
     section_header("Last Synced")
     print(f"  {manifest.get('updated', 'never')}")
     print()
@@ -1576,6 +1608,15 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
             generator(manifest, args)
             instruction_count += 1
 
+    # CLAUDE.md multi-path distribution (project-level copies)
+    claude_md_raw = manifest.get("claude_md", {}).get("paths", [])
+    if claude_md_raw and not args.only:
+        claude_md_targets = _expand_agents_md_paths(claude_md_raw)
+        if claude_md_targets:
+            summary_line("CLAUDE.md (projects)", len(claude_md_targets), "copies")
+            gen_claude_multipath(manifest, args)
+            instruction_count += 1
+
     section_header("Rules")
     rule_count = 0
     for target in active_rules:
@@ -1596,6 +1637,7 @@ def cmd_sync(args: argparse.Namespace, manifest: Optional[dict] = None) -> None:
             summary_line(AGENT_PATHS[target_name]["label"], n, mode)
             sync_skills(skills_dir, args, target_config=target_cfg)
             skill_count += 1
+
 
     if not args.dry_run:
         manifest["updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -1694,6 +1736,7 @@ def cmd_set(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     section, field, kind = SETTABLE_KEYS[key]
+    manifest.setdefault(section, {})
     if kind == "array":
         manifest[section][field] = [v.strip() for v in args.value.split(",") if v.strip()]
     else:

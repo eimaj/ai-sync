@@ -18,6 +18,7 @@ Edit rules once in `~/.ai-agent/rules/`, run `sync`, and every agent gets update
 - [🛡️ Safety & Backups](#️-safety--backups)
 - [📖 Commands](#-commands)
 - [📋 AGENTS.md Paths](#-agentsmd-paths)
+- [📄 CLAUDE.md Paths](#-claudemd-paths)
 - [⚡ How It Works](#-how-it-works)
 - [📁 Directory Structure](#-directory-structure)
 - [⏪ Reverting / Uninstalling](#-reverting--uninstalling)
@@ -143,6 +144,9 @@ sync-ai-rules remove-rule my-rule
 # Set AGENTS.md output paths
 sync-ai-rules set agents_md.paths "~/Code/**/AGENTS.md"
 
+# Distribute CLAUDE.md to project directories
+sync-ai-rules set claude_md.paths "~/Code/my-project/CLAUDE.md"
+
 # Change sync targets
 sync-ai-rules reconfigure
 ```
@@ -238,6 +242,24 @@ Wildcards expand at sync time using Python's `glob`. A pattern like `~/Code/**/A
 
 ---
 
+## 📄 CLAUDE.md Paths
+
+Claude Code uses `CLAUDE.md` for project-level instructions, but each project gets its own copy — there's no cross-project equivalent of `AGENTS.md`. Use `claude_md.paths` to distribute your global rules to any number of project directories automatically on each sync.
+
+```bash
+# Single project
+sync-ai-rules set claude_md.paths "~/Code/my-project/CLAUDE.md"
+
+# Multiple projects
+sync-ai-rules set claude_md.paths "~/Code/project-a/CLAUDE.md,~/Code/project-b/CLAUDE.md"
+```
+
+The generated file contains the same concatenated rule content as `~/.claude/CLAUDE.md`. It includes the `# Generated from ~/.ai-agent/` header, so `clean` can detect and remove project copies if needed.
+
+> **Note:** Each project's `CLAUDE.md` is typically a mix of global rules (synced) and project-specific instructions (hand-written). If your project already has a hand-crafted `CLAUDE.md`, don't add it to `claude_md.paths` — this would overwrite the project-specific content.
+
+---
+
 ## ⚡ How It Works
 
 **`init`** scans your existing agent configs (Cursor `.mdc`, Codex `model-instructions.md`, etc.), deduplicates across sources, and lets you cherry-pick which instructions, rules, and skills to import via interactive multi-select. It writes canonical plain-markdown files to `rules/`, copies shared skills to `skills/`, and creates `manifest.json`.
@@ -249,7 +271,8 @@ Wildcards expand at sync time using Python's `glob`. A pattern like `~/Code/**/A
 | **Cursor** | Wraps each rule in `.mdc` frontmatter, writes individual files |
 | **Codex** | Concatenates rules with section headers into one file |
 | **Claude/Gemini/Kiro** | Concatenates rules into a single markdown file |
-| **AGENTS.md** | Writes a condensed numbered summary to configured paths |
+| **AGENTS.md** | Writes a condensed numbered summary to all `agents_md.paths` |
+| **CLAUDE.md (projects)** | Copies concatenated rules to all `claude_md.paths` |
 | **Skills** | Symlinks or copies skills per target (`sync_mode` in manifest) |
 
 All generated files include a `# Generated from ~/.ai-agent/` header so the tool can detect and skip them during re-import.
